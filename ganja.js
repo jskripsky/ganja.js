@@ -3,34 +3,6 @@
   * @link   https://github.com/enkimute/ganja.js
   */
 
-/*********************************************************************************************************************/
-//
-// Ganja.js is an Algebra generator for javascript. It generates a wide variety of Algebra's and supports operator
-// overloading, algebraic literals and a variety of graphing options.
-//
-// Ganja.js is designed with prototyping and educational purposes in mind. Clean mathematical syntax is the primary
-// target.
-//
-// Ganja.js exports only one function called *Algebra*. This function is used to generate Algebra classes. (say complex
-// numbers, minkowski or 3D CGA). The returned class can be used to create, add, multiply etc, but also to upgrade
-// javascript functions with algebraic literals, operator overloading, vectors, matrices and much more.
-//
-// As a simple example, multiplying two complex numbers 3+2i and 1+4i could be done like this :
-//
-//  var complex = Algebra(0,1);
-//  var a = new complex([3,2]);
-//  var b = new complex([1,3]);
-//  var result = a.Mul(b);
-//
-// But the same can be written using operator overloading and algebraic literals. (where scientific notation with
-// lowercase e is overloaded to directly specify generators (e1, e2, e12, ...))
-//
-//   var result = Algebra(0,1,()=>(3+2e1)*(1+4e1));
-//
-// Please see github for user documentation and examples.
-//
-/*********************************************************************************************************************/
-
 // Documentation below is for implementors. I'll assume you know about Clifford Algebra's, grades, its products, etc ..
 // I'll also assume you are familiar with ES6. My style may feel a bith mathematical, advise is to read slow.
 
@@ -40,94 +12,16 @@
   else context[name] = definition();
 }('Algebra', this, function () {
 
-/** Some helpers for eigenvalues for bivector split in high-d spaces **/
-  function QR(M) {
-    // helpers
-    const {abs,sqrt} = Math;
-    const hyp = (a,b)=>abs(a)>abs(b)?abs(a)*sqrt(1+(b/a)**2):b==0?0:abs(b)*sqrt(1+(a/b)**2);
-    const [m,n] = [M.length, M[0].length];
-    var qr = M.map(r=>r.map(c=>c)), Q = M.map(r=>r.map(c=>0)), R = M.map(r=>r.map(c=>0)), d = [], k, i, j, nrm;
-    // helper matrix
-    for (k=0; k<n; ++k) {
-      for (i=k, nrm=0; i<m; ++i) nrm = hyp(nrm,qr[i][k]);
-      if (nrm) {
-        if (qr[k][k] < 0) nrm = -nrm;
-        for (i=k; i<m; ++i) qr[i][k] = qr[i][k]/nrm;
-        qr[k][k] = qr[k][k]+1;
-        for (j=k+1; j<n; ++j) {
-            for (i=k, s=0; i<m; ++i) s += qr[i][k] * qr[i][j];
-            s = -s / qr[k][k];
-            for (i=k; i<m; ++i) qr[i][j] += s*qr[i][k];
-        }
-      }
-      d[k] = -nrm;     
-    }
-    // extract Q
-    for (k=n-1; k>=0; --k) {
-        for (i=0; i<m; ++i) Q[i][k] = 0;
-        Q[k][k] = 1;
-        for (j=k; j<n; ++j) if (qr[k][k]) {
-          for(i=k, s=0; i<m; ++i) s+= qr[i][k]*Q[i][j]; 
-          s = -s/qr[k][k];
-          for (i=k; i<m; ++i) Q[i][j] += s*qr[i][k];      
-        }
-    }
-    // extract R
-    for (i=0; i<n; ++i) for (j=0; j<n; ++j) R[i][j] = i<j?qr[i][j]:i==j?d[i]:0;
-    return [Q,R]
-  }
-
-  function eigenValues(A,iter=50) {
-    const mul = (A,B)=>{
-        var res = A.map(r=>r.map(c=>0));
-        for(let i=0;i<A.length;++i) for(let j=0;j<B.length;++j) for(let k=0;k<B[0].length;++k)
-        res[i][k] += A[i][j] * B[j][k];
-        return res;
-    }
-    for (var i=0; i<iter; ++i) { var [Q,R] = QR(A); A = mul(R,Q); }
-    return A.map((x,i)=>A[i][i]);
-  }
-
-/** The Algebra class generator. Possible calling signatures :
-  *   Algebra([func])                      => algebra with no dimensions, i.e. R. Optional function for the translator.
-  *   Algebra(p,[func])                    => 'p' positive dimensions and an optional function to pass to the translator.
-  *   Algebra(p,q,[func])                  => 'p' positive and 'q' negative dimensions and optional function.
-  *   Algebra(p,q,r,[func])                => 'p' positive, 'q' negative and 'r' zero dimensions and optional function.
-  *   Algebra({                            => for custom basis, cayley, mixing, etc pass in an object as first parameter.
-  *     [p:p],                             => optional 'p' for # of positive dimensions
-  *     [q:q],                             => optional 'q' for # of negative dimensions
-  *     [r:r],                             => optional 'r' for # of zero dimensions
-  *     [metric:array],                    => alternative for p,q,r. e.g. ([1,1,1,-1] for spacetime)
-  *     [basis:array],                     => array of strings with basis names. (e.g. ['1','e1','e2','e12'])
-  *     [Cayley:Cayley],                   => optional custom Cayley table (strings). (e.g. [['1','e1'],['e1','-1']])
-  *     [mix:boolean],                     => Allows mixing of various algebras. (for space efficiency).
-  *     [graded:boolean],                  => Use a graded algebra implementation. (automatic for +6D)
-  *     [baseType:Float32Array]            => optional basetype to use. (only for flat generator)
-  *   },[func])                            => optional function for the translator.
- **/
-  return function Algebra(p,q,r) {
-  // Resolve possible calling signatures so we know the numbers for p,q,r. Last argument can always be a function.
-    var fu=arguments[arguments.length-1],options=p; if (options instanceof Object) {
-      q = (p.q || (p.metric && p.metric.filter(x=>x==-1).length))| 0;
-      r = (p.r || (p.metric && p.metric.filter(x=>x==0).length)) | 0;
-      p = p.p === undefined ? (p.metric && p.metric.filter(x=>x==1).length) || 0 : p.p || 0;
-    } else { options={}; p=p|0; r=r|0; q=q|0; };
-
-  // Support for multi-dual-algebras
-    if (options.dual || (p==0 && q==0 && r<0)) { r=options.dual=options.dual||-r; // Create a dual number algebra if r<0 (old) or options.dual set(new)
-      options.basis  = [...Array(r+1)].map((a,i)=>i?'e0'+i:'1');  options.metric = [1,...Array(r)]; options.tot=r+1;
-      options.Cayley = [...Array(r+1)].map((a,i)=>[...Array(r+1)].map((y,j)=>i*j==0?((i+j)?'e0'+(i+j):'1'):'0'));
-    }
-    if (options.over) options.baseType = Array;
-
-  // Calculate the total number of dimensions.
-    var tot = options.tot = (options.tot||(p||0)+(q||0)+(r||0)||(options.basis&&options.basis.length))|0;
+/** The 3D PGA Algebra class generator.  **/
+  return function Algebra(fu) {
+    var p=3, q=0, r=1;
+  // total number of dimensions.
+    var tot = 4;
 
   // Unless specified, generate a full set of Clifford basis names. We generate them as an array of strings by starting
   // from numbers in binary representation and changing the set bits into their relative position.
   // Basis names are ordered first per grade, then lexically (not cyclic!).
-  // For 10 or more dimensions all names will be double digits ! 1e01 instead of 1e1 ..
-    var basis=(options.basis&&(options.basis.length==2**tot||r<0||options.Cayley)&&options.basis)||[...Array(2**tot)]           // => [undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]
+    var basis=[...Array(2**tot)]           // => [undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]
               .map((x,xi)=>(((1<<30)+xi).toString(2)).slice(-tot||-1)                                                           // => ["000", "001", "010", "011", "100", "101", "110", "111"]  (index of array in base 2)
               .replace(/./g,(a,ai)=>a=='0'?'':String.fromCharCode(66+ai-(r!=0))))                                               // => ["", "3", "2", "23", "1", "13", "12", "123"] (1 bits replaced with their positions, 0's removed)
               .sort((a,b)=>(a.toString().length==b.toString().length)?(a>b?1:b>a?-1:0):a.toString().length-b.toString().length) // => ["", "1", "2", "3", "12", "13", "23", "123"] (sorted numerically)
@@ -135,20 +29,36 @@
 
   // See if the basis names start from 0 or 1, store grade per component and lowest component per grade.
     var low=basis.length==1?1:basis[1].match(/\d+/g)[0]*1,
-        grades=options.grades||(options.dual&&basis.map((x,i)=>i?1:0))||basis.map(x=>tot>9?(x.length-1)/2:x.length-1),
+        grades=basis.map(x=>x.length-1),
         grade_start=grades.map((a,b,c)=>c[b-1]!=a?b:-1).filter(x=>x+1).concat([basis.length]);
 
   // String-simplify a concatenation of two basis blades. (and supports custom basis names e.g. e21 instead of e12)
   // This is the function that implements e1e1 = +1/-1/0 and e1e2=-e2e1. The brm function creates the remap dictionary.
     var simplify = (s,p,q,r)=>{
-          var sign=1,c,l,t=[],f=true,ss=s.match(tot>9?/(\d\d)/g:/(\d)/g);if (!ss) return s; s=ss; l=s.length;
-          while (f) { f=false;
-          // implement Ex*Ex = metric.
-            for (var i=0; i<l;) if (s[i]===s[i+1]) { if (options.metric) sign*=options.metric[s[i]-basis[1][1]]; else if ((s[i]-low)>=(p+r)) sign*=-1; else if ((s[i]-low)<r) sign=0;i+=2; f=true; } else t.push(s[i++]);
-          // implement Ex*Ey = -Ey*Ex while sorting basis vectors.
-            for (var i=0; i<t.length-1; i++) if (t[i]>t[i+1]) { c=t[i];t[i]=t[i+1];t[i+1]=c;sign*=-1;f=true; break;} if (f) { s=t;t=[];l=s.length; }
+          var sign=1,c,l,t=[],f=true,ss=s.match(/(\d)/g);
+          if (!ss) return s;
+          s=ss; l=s.length;
+
+          while (f) {
+            f=false;
+            // implement Ex*Ex = metric.
+            for (var i=0; i<l;) {
+              if (s[i]===s[i+1]) {
+                if ((s[i]-low)>=(p+r))
+                  sign*=-1;
+                else if ((s[i]-low)<r)
+                  sign=0;i+=2; f=true;
+              } else t.push(s[i++]);
+            }
+            // implement Ex*Ey = -Ey*Ex while sorting basis vectors.
+            for (var i=0; i<t.length-1; i++)
+              if (t[i]>t[i+1]) {
+                c=t[i];t[i]=t[i+1];t[i+1]=c;sign*=-1;f=true; break;
+              }
+            if (f) { s=t;t=[];l=s.length; }
           }
-          var ret=(sign==0)?'0':((sign==1)?'':'-')+(t.length?'e'+t.join(''):'1'); return (brm&&brm[ret])||(brm&&brm['-'+ret]&&'-'+brm['-'+ret])||ret;
+          var ret=(sign==0)?'0':((sign==1)?'':'-')+(t.length?'e'+t.join(''):'1');
+          return (brm&&brm[ret]) || (brm&&brm['-'+ret]&&'-'+brm['-'+ret]) || ret;
         },
         brm=(x=>{ var ret={}; for (var i in basis) ret[basis[i]=='1'?'1':simplify(basis[i],p,q,r)] = basis[i]; return ret; })(basis);
 
@@ -156,7 +66,6 @@
     var simplify_bits = (A,B,p2)=>{ var n=p2||(p+q+r),t=0,ab=A&B,res=A^B; if (ab&((1<<r)-1)) return [0,0]; while (n--) t^=(A=A>>1); t&=B; t^=ab>>(p+r); t^=t>>16; t^=t>>8; t^=t>>4; return [1-2*(27030>>(t&15)&1),res]; },
         bc = (v)=>{ v=v-((v>>1)& 0x55555555); v=(v&0x33333333)+((v>>2)&0x33333333); var c=((v+(v>>4)&0xF0F0F0F)*0x1010101)>>24; return c };
 
-  if (!options.graded && tot <= 6 || options.graded===false || options.Cayley) {
   // Faster and degenerate-metric-resistant dualization. (a remapping table that maps items into their duals).
     var drm=basis.map((a,i)=>{ return {a:a,i:i} })
                  .sort((a,b)=>a.a.length>b.a.length?1:a.a.length<b.a.length?-1:(+a.a.slice(1).split('').sort().join(''))-(+b.a.slice(1).split('').sort().join('')) )
@@ -164,25 +73,35 @@
         drms=drm.map((x,i)=>(x==0||i==0)?1:simplify(basis[x]+basis[i])[0]=='-'?-1:1);
 
   /// Store the full metric (also for bivectors etc ..)
-    var metric = options.Cayley&&options.Cayley.map((x,i)=>x[i]) || basis.map((x,xi)=>simplify(x+x,p,q,r)|0); metric[0]=1;
+    var metric = basis.map((x,xi)=>simplify(x+x,p,q,r)|0); metric[0]=1;
 
   /// Generate multiplication tables for the outer and geometric products.
-    var mulTable   = options.Cayley||basis.map(x=>basis.map(y=>(x==1)?y:(y==1)?x:simplify(x+y,p,q,r)));
-
-  // subalgebra support. (must be bit-order basis blades, does no error checking.)
-    if (options.even) options.basis = basis.filter(x=>x.length%2==1);
-    if (options.basis && !options.Cayley && r>=0 && options.basis.length != 2**tot) {
-      metric = metric.filter((x,i)=>options.basis.indexOf(basis[i])!=-1);
-      mulTable = mulTable.filter((x,i)=>options.basis.indexOf(basis[i])!=-1).map(x=>x.filter((x,i)=>options.basis.indexOf(basis[i])!=-1));
-      basis  = options.basis;
-    }
+    var mulTable   = basis.map(x=>basis.map(y=>(x==1)?y:(y==1)?x:simplify(x+y,p,q,r)));
 
   /// Convert Cayley table to product matrices. The outer product selects the strict sum of the GP (but without metric), the inner product
   /// is the left contraction.
-    var gp=basis.map(x=>basis.map(x=>'0')), cp=gp.map(x=>gp.map(x=>'0')), cps=gp.map(x=>gp.map(x=>'0')), op=gp.map(x=>gp.map(x=>'0')), gpo={};          // Storage for our product tables.
-    basis.forEach((x,xi)=>basis.forEach((y,yi)=>{ var n = mulTable[xi][yi].replace(/^-/,''); if (!gpo[n]) gpo[n]=[]; gpo[n].push([xi,yi]); }));
+    var gp=basis.map(x=>basis.map(x=>'0')); // mul, geom. prod.
+    var cp=gp.map(x=>gp.map(x=>'0')); // ldot (inner/left contraction)
+    var cps=gp.map(x=>gp.map(x=>'0')); // dot (symmetric inner)
+    var op=gp.map(x=>gp.map(x=>'0')); // wedge (outer prod)
+
+    // mulTable reversed: map from result (w/o sign, one out of 16) to list of all matching/contributing input indices
+    var gpo={};
+    basis.forEach((x,xi)=>
+      basis.forEach((y,yi)=>{
+        var n = mulTable[xi][yi].replace(/^-/,'');
+        if (!gpo[n]) gpo[n]=[];
+        gpo[n].push([xi,yi]);
+      })
+    );
+
+    // go base by base, calc all products
     basis.forEach((o,oi)=>{
-      gpo[o].forEach(([xi,yi])=>op[oi][xi]=(grades[oi]==grades[xi]+grades[yi])?((mulTable[xi][yi]=='0')?'0':((mulTable[xi][yi][0]!='-')?'':'-')+'b['+yi+']*this['+xi+']'):'0');
+      // iter over all input indices contributing to this base
+      gpo[o].forEach(([xi,yi])=>
+        // add if grade sum matches current base
+        op[oi][xi]=(grades[oi]==grades[xi]+grades[yi])?((mulTable[xi][yi]=='0')?'0':((mulTable[xi][yi][0]!='-')?'':'-')+'b['+yi+']*this['+xi+']'):'0'
+      );
       gpo[o].forEach(([xi,yi])=>{
         gp[oi][xi] =((gp[oi][xi]=='0')?'':gp[oi][xi]+'+')   + ((mulTable[xi][yi]=='0')?'0':((mulTable[xi][yi][0]!='-')?'':'-')+'b['+yi+']*this['+xi+']');
         cp[oi][xi] =((cp[oi][xi]=='0')?'':cp[oi][xi]+'+')   + ((grades[oi]==grades[yi]-grades[xi])?gp[oi][xi]:'0');
@@ -191,7 +110,7 @@
     });
 
   /// Flat Algebra Multivector Base Class.
-    var generator = class MultiVector extends (options.baseType||Float32Array) {
+    var generator = class MultiVector extends Float32Array {
     /// constructor - create a floating point array with the correct number of coefficients.
       constructor(a) { super(a||basis.length); return this; }
 
@@ -222,215 +141,32 @@
     /// The Dual, Length, non-metric length and normalized getters.
       get Dual (){ if (r) return this.map((x,i,a)=>a[drm[i]]*drms[i]); var res = new this.constructor(); res[res.length-1]=1; return this.Mul(res); };
       get UnDual (){ if (r) return this.map((x,i,a)=>a[drm[i]]*drms[a.length-i-1]); var res = new this.constructor(); res[res.length-1]=1; return this.Div(res); };
-      get Length (){ return options.over?Math.sqrt(Math.abs(this.Mul(this.Conjugate).s.s)):Math.sqrt(Math.abs(this.Mul(this.Conjugate).s)); };
+      get Length (){ return Math.sqrt(Math.abs(this.Mul(this.Conjugate).s)); };
       get VLength (){ var res = 0; for (var i=0; i<this.length; i++) res += this[i]*this[i]; return Math.sqrt(res); };
-      get Normalized (){ 
-        if (p==3 && r==1) {
+      get Normalized (){
           var sq = this.Mul(this.Reverse), [s,t] = [sq[0], sq[15]];
           if (s==0) return this;
           sq[0] = 1/Math.sqrt(s); sq[15] = -t/(2*Math.pow(Math.sqrt(s),3));
           return this.Mul(sq);
-        } else {
-          var res = new this.constructor(), l=this.Length; if (!l) return this; l=1/l; for (var i=0; i<this.length; i++) if (options.over) {res[i]=this[i].Scale(l);} else {res[i]=this[i]*l}; return res; 
-        }
       };
     }
 
   /// Convert symbolic matrices to code. (skipping zero's on dot and wedge matrices).
   /// These all do straightforward string fiddling. If the 'mix' option is set they reference basis components using e.g. '.e1' instead of eg '[3]' .. so that
   /// it will work for elements of subalgebras etc.
-    generator.prototype.Add   = new Function('b,res','res=res||new this.constructor();\n'+basis.map((x,xi)=>'res['+xi+']=b['+xi+']+this['+xi+']').join(';\n').replace(/(b|this)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+';\nreturn res')
-    generator.prototype.Scale = new Function('b,res','res=res||new this.constructor();\n'+basis.map((x,xi)=>'res['+xi+']=b*this['+xi+']').join(';\n').replace(/(b|this)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+';\nreturn res')
-    generator.prototype.Sub   = new Function('b,res','res=res||new this.constructor();\n'+basis.map((x,xi)=>'res['+xi+']=this['+xi+']-b['+xi+']').join(';\n').replace(/(b|this)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+';\nreturn res')
-    generator.prototype.Mul   = new Function('b,res','res=res||new this.constructor();\n'+gp.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a).replace(/\+0/g,'')+';').join('\n')+'\nreturn res;');
-    generator.prototype.LDot  = new Function('b,res','res=res||new this.constructor();\n'+cp.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+';').join('\n')+'\nreturn res;');
-    generator.prototype.Dot   = new Function('b,res','res=res||new this.constructor();\n'+cps.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+';').join('\n')+'\nreturn res;');
-    generator.prototype.Wedge = new Function('b,res','res=res||new this.constructor();\n'+op.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+';').join('\n')+'\nreturn res;');
-//    generator.prototype.Vee   = new Function('b,res','res=res||new this.constructor();\n'+op.map((r,ri)=>'res['+drm[ri]+']='+r.map(x=>x.replace(/\[(.*?)\]/g,function(a,b){return '['+(drm[b|0])+']'})).join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+';').join('\n')+'\nreturn res;');
-  /// Conforms to the new Chapter 11 now.
-    generator.prototype.Vee   = new Function('b,res',('res=res||new this.constructor();\n'+op.map((r,ri)=>'res['+drm[ri]+']='+drms[ri]+'*('+r.map(x=>x.replace(/\[(.*?)\]/g,function(a,b){return '['+(drm[b|0])+']'+(drms[b|0]>0?"":"*-1")})).join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>options.mix?'('+b+'.'+(c|0?basis[c]:'s')+'||0)':a)+');').join('\n')+'\nreturn res;').replace(/(b\[)|(this\[)/g,a=>a=='b['?'this[':'b['));
-    generator.prototype.eigenValues = eigenValues;
+    generator.prototype.Add   = new Function('b,res','res=res||new this.constructor();\n'+basis.map((x,xi)=>'res['+xi+']=b['+xi+']+this['+xi+']').join(';\n').replace(/(b|this)\[(.*?)\]/g,(a,b,c)=>a)+';\nreturn res')
+    generator.prototype.Scale = new Function('b,res','res=res||new this.constructor();\n'+basis.map((x,xi)=>'res['+xi+']=b*this['+xi+']').join(';\n').replace(/(b|this)\[(.*?)\]/g,(a,b,c)=>a)+';\nreturn res')
+    generator.prototype.Sub   = new Function('b,res','res=res||new this.constructor();\n'+basis.map((x,xi)=>'res['+xi+']=this['+xi+']-b['+xi+']').join(';\n').replace(/(b|this)\[(.*?)\]/g,(a,b,c)=>a)+';\nreturn res')
+    generator.prototype.Mul   = new Function('b,res','res=res||new this.constructor();\n'+gp.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>a).replace(/\+0/g,'')+';').join('\n')+'\nreturn res;');
+    generator.prototype.LDot  = new Function('b,res','res=res||new this.constructor();\n'+cp.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>a)+';').join('\n')+'\nreturn res;');
+    generator.prototype.Dot   = new Function('b,res','res=res||new this.constructor();\n'+cps.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>a)+';').join('\n')+'\nreturn res;');
+    generator.prototype.Wedge = new Function('b,res','res=res||new this.constructor();\n'+op.map((r,ri)=>'res['+ri+']='+r.join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>a)+';').join('\n')+'\nreturn res;');
+    generator.prototype.Vee   = new Function('b,res',('res=res||new this.constructor();\n'+op.map((r,ri)=>'res['+drm[ri]+']='+drms[ri]+'*('+r.map(x=>x.replace(/\[(.*?)\]/g,function(a,b){return '['+(drm[b|0])+']'+(drms[b|0]>0?"":"*-1")})).join('+').replace(/\+\-/g,'-').replace(/\+0/g,'').replace(/(\w*?)\[(.*?)\]/g,(a,b,c)=>a)+');').join('\n')+'\nreturn res;').replace(/(b\[)|(this\[)/g,a=>a=='b['?'this[':'b['));
 
   /// Add getter and setters for the basis vectors/bivectors etc ..
     basis.forEach((b,i)=>Object.defineProperty(generator.prototype, i?b:'s', {
       configurable: true, get(){ return this[i] }, set(x){ this[i]=x; }
     }));
-
-  /// Graded generator for high-dimensional algebras.
-  } else {
-
-  /// extra graded lookups.
-    var basisg = grade_start.slice(0,grade_start.length-1).map((x,i)=>basis.slice(x,grade_start[i+1]));
-    var counts = grade_start.map((x,i,a)=>i==a.length-1?0:a[i+1]-x).slice(0,tot+1);
-    var basis_bits = basis.map(x=>x=='1'?0:x.slice(1).match(tot>9?/\d\d/g:/\d/g).reduce((a,b)=>a+(1<<(b-low)),0)),
-        bits_basis = []; basis_bits.forEach((b,i)=>bits_basis[b]=i);
-    var metric = basisg.map((x,xi)=>x.map((y,yi)=>simplify_bits(basis_bits[grade_start[xi]+yi],basis_bits[grade_start[xi]+yi])[0]));
-    var drms   = basisg.map((x,xi)=>x.map((y,yi)=>simplify_bits(basis_bits[grade_start[xi]+yi],(~basis_bits[grade_start[xi]+yi])&((1<<tot)-1))[0]));
-
-  /// Flat Algebra Multivector Base Class.
-    var generator = class MultiVector extends Array {
-    /// constructor - create a floating point array with the correct number of coefficients.
-      constructor(a) { super(a||tot); return this; }
-
-    /// grade selection - return a only the part of the input with the specified grade.
-      Grade(grade,res) { res=new this.constructor(); res[grade] = this[grade]; return res; }
-
-    /// grade creation - convert array with just one grade to full multivector.
-      nVector(grade,...args) { this[grade]=args; return this; }
-
-    /// Fill in coordinates (accepts sequence of index,value as arguments)
-      Coeff() {
-                for (var i=0,l=arguments.length; i<l; i+=2) if (arguments[i+1]) {
-                 var gi = grades[arguments[i]];
-                 if (this[gi]==undefined) this[gi]=[];
-                 this[gi][arguments[i]-grade_start[gi]]=arguments[i+1];
-                }
-                return this;
-              }
-
-    /// Negates specific grades (passed in as args)
-      Map(res, ...a) {  /* tbc */ }
-
-    /// Returns the vector grade only.
-      get Vector ()    { return this[1] };
-
-    /// multivector addition, subtraction and scalar multiplication.
-      Add(b,r) {
-        r=r||new this.constructor();
-        for (var i=0,l=Math.max(this.length,b.length);i<l;i++)
-          if (!this[i] ^ !b[i]) r[i] = (!this[i]) ? b[i].slice():this[i].slice();
-          else if (!(this[i]||b[i])) {}
-          else { if (r[i]==undefined) r[i]=[]; for(var j=0,m=Math.max(this[i].length,b[i].length);j<m;j++)
-          {
-            if (typeof this[i][j]=="string" || typeof r[i][j]=="string" || typeof b[i][j]=="string") {
-             if (!this[i][j]) r[i][j] = ""+b[i][j];
-             else if (!b[i][j]) r[i][j] = ""+this[i][j];
-             else r[i][j]="("+(this[i][j]||"0")+(b[i][j][0]=="-"?"":"+")+(b[i][j]||"0")+")";
-            } else r[i][j]=(this[i][j]||0)+(b[i][j]||0);
-          }}
-        return r;
-      }
-      Sub(b,r) {
-        r=r||new this.constructor();
-        for (var i=0,l=Math.max(this.length,b.length);i<l;i++)
-          if (!this[i] || !b[i]) r[i] = (!this[i]) ? (b[i]?b[i].map(x=>(typeof x=="string")?"-"+x:-x):undefined):this[i];
-          else { if (r[i]==undefined) r[i]=[]; for(var j=0,m=Math.max(this[i].length,b[i].length);j<m;j++)
-            if (typeof this[i][j]=="string" || typeof r[i][j]=="string" || typeof b[i][j]=="string") r[i][j]="("+(this[i][j]||"0")+"-"+(b[i][j]||"0")+")";
-            else r[i][j]=(this[i][j]||0)-(b[i][j]||0);
-          }
-        return r;
-      }
-      Scale(s) { return this.map(x=>x&&x.map(y=>typeof y=="string"?y+"*"+s:y*s)); }
-
-    // geometric product.
-      Mul(b,r) {
-        r=r||new this.constructor(); var gotstring=false;
-        for (var i=0,x,gsx; gsx=grade_start[i],x=this[i],i<this.length; i++) if (x) for (var j=0,y,gsy;gsy=grade_start[j],y=b[j],j<b.length; j++) if (y) for (var a=0; a<x.length; a++) if (x[a]) for (var bb=0; bb<y.length; bb++) if (y[bb]) {
-          if (i==j && a==bb) { r[0] = r[0]||(typeof x[0]=="string" || typeof y[bb]=="string"?[""]:[0]);
-            if (typeof x[a]=="string" || typeof r[0][0]=="string" || typeof y[bb]=="string") {
-            r[0][0] = (r[0][0]?(r[0][0]+(x[a][0]=="-"?"":"+")):"")+ x[a]+"*"+y[bb]+(metric[i][a]!=1?"*"+metric[i][a]:"");  gotstring=true;
-            } else r[0][0] += x[a]*y[bb]*metric[i][a];
-          } else {
-             var rn=simplify_bits(basis_bits[gsx+a],basis_bits[gsy+bb]), g=bc(rn[1]), e=bits_basis[rn[1]]-grade_start[g];
-             if (!r[g])r[g]=[];
-               if (typeof r[g][e]=="string"||typeof x[a]=="string"||typeof y[bb]=="string") {
-                 r[g][e] = (r[g][e]?r[g][e]+"+":"") + (rn[0]!=1?rn[0]==-1?"-":rn[0]+"*":"")+ x[a]+(y[bb]!=1?"*"+y[bb]:""); gotstring=true;
-               } else r[g][e] = (r[g][e]||0) + rn[0]*x[a]*y[bb];
-          }
-        }
-        if (gotstring) return r.map(g=>g.map(e=>e&&(!(e+'').match(/-{0,1}\w+/))?'('+e+')':e))
-        return r;
-      }
-    // outer product.
-      Wedge(b,r) {
-        r=r||new this.constructor();
-        for (var i=0,x,gsx; gsx=grade_start[i],x=this[i],i<this.length; i++) if (x) for (var j=0,y,gsy;gsy=grade_start[j],y=b[j],j<b.length; j++) if (y) for (var a=0; a<x.length; a++) if (x[a]) for (var bb=0; bb<y.length; bb++) if (y[bb]) {
-          if (i!=j || a!=bb) {
-             var n1=basis_bits[gsx+a], n2=basis_bits[gsy+bb], rn=simplify_bits(n1,n2,tot), g=bc(rn[1]), e=bits_basis[rn[1]]-grade_start[g];
-             if (g == i+j) { if (!r[g]) r[g]=[]; r[g][e] = (r[g][e]||0) + rn[0]*x[a]*y[bb]; }
-          }
-        }
-        return r;
-      }
-    // outer product glsl output.
-      OPNS_GLSL(b,point_source) {
-        var r='',count=0,curg;
-        for (var i=0,x,gsx; gsx=grade_start[i],x=this[i],i<this.length; i++) if (x) for (var j=0,y,gsy;gsy=grade_start[j],y=b[j],j<b.length; j++) if (y) for (var a=0; a<counts[i]; a++) for (var bb=0; bb<counts[j]; bb++) {
-          if (i!=j || a!=bb) {
-             var n1=basis_bits[gsx+a], n2=basis_bits[gsy+bb], rn=simplify_bits(n1,n2,tot), g=bc(rn[1]), e=bits_basis[rn[1]]-grade_start[g];
-             if (g == i+j) { curg=g; r += `res[${e}]${rn[0]=='1'?"+=":"-="}(${(point_source[a]+'').replace(/1([^.\d])|1$/g,"1.0$1")})*b[${bb}]; //${count++}\n`;  }
-          }
-        }
-        r=r.split('\n').filter(x=>x).sort((a,b)=>((a.match(/\d+/)[0]|0)-(b.match(/\d+/)[0]|0))||((a.match(/\d+$/)[0]|0)-(b.match(/\d+$/)[0]|0))).map(x=>x.replace(/\/\/\d+$/,''));
-        var r2 = 'float sum=0.0; float res=0.0;\n', g=0;
-        r.forEach(x=>{
-          var cg = x.match(/\d+/)[0]|0;
-          if (cg != g) r2 += "sum += res*res;\nres = 0.0;\n";
-          r2 += x.replace(/\[\d+\]/,'') + '\n';
-          g=cg;
-        });
-        r2+= "sum += res*res;\n";
-        return r2;
-      }
-    // Inner product glsl output.  
-      IPNS_GLSL(b,point_source) {
-        var r='',count=0,curg;
-        for (var i=0,x,gsx; gsx=grade_start[i],x=this[i],i<this.length; i++) if (x) for (var j=0,y,gsy;gsy=grade_start[j],y=b[j],j<b.length; j++) if (y) for (var a=0; a<counts[i]; a++) for (var bb=0; bb<counts[j]; bb++) {
-           var n1=basis_bits[gsx+a], n2=basis_bits[gsy+bb], rn=simplify_bits(n1,n2,tot), g=bc(rn[1]), e=bits_basis[rn[1]]-grade_start[g];
-           if (g == Math.abs(i-j) && point_source[a]) { curg=g; r += `res[${e}]${rn[0]=='1'?"+=":"-="}(${(point_source[a]+'').replace(/1([^.\d])|1$/g,"1.0$1")})*b[${bb}]; //${count++}\n`;  }
-        }
-        r=r.split('\n').filter(x=>x).sort((a,b)=>((a.match(/\d+/)[0]|0)-(b.match(/\d+/)[0]|0))||((a.match(/\d+$/)[0]|0)-(b.match(/\d+$/)[0]|0))).map(x=>x.replace(/\/\/\d+$/,''));
-        var r2 = 'float sum=0.0; float res=0.0;\n', g=0;
-        r.forEach(x=>{
-          var cg = x.match(/\d+/)[0]|0;
-          if (cg != g) r2 += "sum += res*res;\nres = 0.0;\n";
-          r2 += x.replace(/\[\d+\]/,'') + '\n';
-          g=cg;
-        });
-        r2+= "sum += res*res;\n";
-        return r2;
-      }
-    // Left contraction.
-      LDot(b,r) {
-        r=r||new this.constructor();
-        for (var i=0,x,gsx; gsx=grade_start[i],x=this[i],i<this.length; i++) if (x) for (var j=0,y,gsy;gsy=grade_start[j],y=b[j],j<b.length; j++) if (y) for (var a=0; a<x.length; a++) if (x[a]) for (var bb=0; bb<y.length; bb++) if (y[bb]) {
-          if (i==j && a==bb) { r[0] = r[0]||[0]; r[0][0] += x[a]*y[bb]*metric[i][a]; }
-          else {
-             var rn=simplify_bits(basis_bits[gsx+a],basis_bits[gsy+bb]), g=bc(rn[1]), e=bits_basis[rn[1]]-grade_start[g];
-             if (g == j-i) { if (!r[g])r[g]=[]; r[g][e] = (r[g][e]||0) + rn[0]*x[a]*y[bb]; }
-          }
-        }
-        return r;
-      }
-    // Symmetric contraction.
-      Dot(b,r) {
-        r=r||new this.constructor();
-        for (var i=0,x,gsx; gsx=grade_start[i],x=this[i],i<this.length; i++) if (x) for (var j=0,y,gsy;gsy=grade_start[j],y=b[j],j<b.length; j++) if (y) for (var a=0; a<x.length; a++) if (x[a]) for (var bb=0; bb<y.length; bb++) if (y[bb]) {
-          if (i==j && a==bb) { r[0] = r[0]||[0]; r[0][0] += x[a]*y[bb]*metric[i][a]; }
-          else {
-             var rn=simplify_bits(basis_bits[gsx+a],basis_bits[gsy+bb]), g=bc(rn[1]), e=bits_basis[rn[1]]-grade_start[g];
-             if (g == Math.abs(j-i)) { if (!r[g])r[g]=[]; r[g][e] = (r[g][e]||0) + rn[0]*x[a]*y[bb]; }
-          }
-        }
-        return r;
-      }
-    // Should be optimized..
-      Vee(b,r)          { return (this.Dual.Wedge(b.Dual)).Dual; }
-    // Output, lengths, involutions, normalized, dual.
-      toString()        { return [...this].map((g,gi)=>g&&g.map((c,ci)=>!c?undefined:((c+'').match(/[\+\-\*]/)?'('+c+')':c)+(gi==0?"":basisg[gi][ci])).filter(x=>x).join('+')).filter(x=>x).join('+').replace(/\+\-/g,'-')||"0"; }
-      get s ()          { if (this[0]) return this[0][0]||0; return 0; }
-      get Length ()     { var res=0; this.forEach((g,gi)=>g&&g.forEach((e,ei)=>res+=(e||0)**2*metric[gi][ei])); return Math.abs(res)**.5; }
-      get VLength ()    { var res=0; this.forEach((g,gi)=>g&&g.forEach((e,ei)=>res+=(e||0)**2)); return Math.abs(res)**.5; }
-      get Reverse ()    { var r=new this.constructor(); this.forEach((x,gi)=>x&&x.forEach((e,ei)=>{if(!r[gi])r[gi]=[]; r[gi][ei] = this[gi][ei]*[1,1,-1,-1][gi%4]; })); return r; }
-      get Involute ()   { var r=new this.constructor(); this.forEach((x,gi)=>x&&x.forEach((e,ei)=>{if(!r[gi])r[gi]=[]; r[gi][ei] = this[gi][ei]*[1,-1,1,-1][gi%4]; })); return r; }
-      get Conjugate ()  { var r=new this.constructor(); this.forEach((x,gi)=>x&&x.forEach((e,ei)=>{if(!r[gi])r[gi]=[]; r[gi][ei] = this[gi][ei]*[1,-1,-1,1][gi%4]; })); return r; }
-      get Dual()        { var r=new this.constructor(); this.forEach((g,gi)=>{ if (!g) return; r[tot-gi]=[]; g.forEach((e,ei)=>r[tot-gi][counts[gi]-1-ei]=drms[gi][ei]*e); }); return r; }
-      get Normalized () { return this.Scale(1/this.Length); }
-    }
-
-
-   // This generator is UNDER DEVELOPMENT - I'm publishing it so I can test on observable.
-  }
 
   // Generate a new class for our algebra. It extends the javascript typed arrays (default float32 but can be specified in options).
     var res = class Element extends generator {
@@ -445,21 +181,15 @@
       Div  (b,res) { return this.Mul(b.Inverse,res); }
       LDiv (b,res) { return b.Inverse.Mul(this,res); }
 
-      
     // Bivector split - we handle all real cases, still have to add the complex cases for those exception scenarios.
-      Split (iter=50) {
+      Split () {
         var k = Math.floor((p+q+r)/2), OB = this.map(x=>x), B = this.map(x=>x), m = 1;
         var Wi = [...Array(k)].map((r,i)=>{ m = m*(i+1); var Wi = B.Scale(1/m); B = B.Wedge(OB); return Wi; });
-        if (k<3) { // The quadratic case is easy to solve. (for spaces <6D)
-          var TDT    = this.Dot(this).s, TWT = this.Wedge(this);
-          if (TWT.VLength < 1E-5) return [this]; // bivector was simple.
-          var D      = 0.5*Math.sqrt( TDT**2 - TWT.Mul(TWT).s );
-          var eigen  = [0.5*TDT + D, 0.5*TDT - D].sort((a,b)=>Math.abs(a)<Math.abs(b)?-1:1); 
-        } else { // For >6D, closed form solutions of the characteristic polyn. are impossible, use eigenvalues of companion matrix. 
-          var Wis    = Wi.map((W,i)=>W.Mul(W).s*(-1)**(k-i+(k%2)) );
-          var matrix = [...Array(k)].map((r,i)=>[...Array(k)].map((c,j)=>(j == k-1)?Wis[k-i-1]:(i-1==j)?1:0));
-          var eigen  = eigenValues(matrix,iter).sort((a,b)=>Math.abs(a)<Math.abs(b)?-1:1);
-        }  
+        var TDT    = this.Dot(this).s, TWT = this.Wedge(this);
+        if (TWT.VLength < 1E-5) return [this]; // bivector was simple.
+
+        var D      = 0.5*Math.sqrt( TDT**2 - TWT.Mul(TWT).s );
+        var eigen  = [0.5*TDT + D, 0.5*TDT - D].sort((a,b)=>Math.abs(a)<Math.abs(b)?-1:1);
         Wi = [Element.Scalar(1),...Wi,Element.Scalar(0)];
         var sum = Element.Scalar(0), res = eigen.slice(1).map(v=>{
           var r = Math.floor(k/2), N = Element.Scalar(0), DN = Element.Scalar(0);
@@ -468,80 +198,57 @@
           var ret = N.Div(DN); sum.Add(ret, sum); return ret;
         });
         return [this.Sub(sum),...res]; // Smallest eigvalue becomes B-rest
-      }  
-      
-    // Factorize a motor
-      Factorize (iter=50) {
-        var S = this.Grade(2).Split(iter);
-        var P = this.Scale(1);
-    //    if (P.s) {
-          var R = S.slice(0,S.length-1).map((Si,i)=>{
-            var Mi    = Element.Scalar(P.s).Add(Si);
-            var scale = Math.sqrt(Mi.Reverse.Mul(Mi).s);
-            return Mi.Scale(1/scale); 
-          });
-          R.push( R.reduce((tot,fact)=>tot.Mul(fact.Reverse), Element.Scalar(1)).Mul(P) );
-      //  } 
-        return R;
-      }  
+      }
 
-    // exp - closed form exp. 
+    // Factorize a motor
+      Factorize () {
+        var S = this.Grade(2).Split();
+        var P = this.Scale(1);
+        var R = S.slice(0,S.length-1).map((Si,i)=>{
+          var Mi    = Element.Scalar(P.s).Add(Si);
+          var scale = Math.sqrt(Mi.Reverse.Mul(Mi).s);
+          return Mi.Scale(1/scale);
+        });
+        R.push( R.reduce((tot,fact)=>tot.Mul(fact.Reverse), Element.Scalar(1)).Mul(P) );
+        return R;
+      }
+
+    // exp - closed form exp.
       Exp  (taylor = false) {
-        if (r==1 && tot<=4 && Math.abs(this[0])<1E-9 && !options.over && !taylor) {
+        if (Math.abs(this[0])<1E-9 && !taylor) {
            // https://www.researchgate.net/publication/360528787_Normalization_Square_Roots_and_the_Exponential_and_Logarithmic_Maps_in_Geometric_Algebras_of_Less_than_6D
            // 0 1 2 3 4 5
            // 5 6 7 8 9 10
            var l = (this[8]*this[8] + this[9]*this[9] + this[10]*this[10]);
            if (l==0) return new Element([1, 0,0,0,0, this[5], this[6], this[7], 0, 0, 0, 0,0,0,0, 0]);
-           var m = (this[5]*this[10] + this[6]*this[9] + this[7]*this[8]), a = Math.sqrt(l), c = Math.cos(a), s = Math.sin(a)/a, t = m/l*(c-s);
-           var test = Element.Element(c, 0,0,0,0, s*this[5] + t*this[10], s*this[6] + t*this[9], s*this[7] + t*this[8], s*this[8], s*this[9], s*this[10], 0,0,0,0, m*s);
-           //return test;  // tbc .. investigate pss coeff??
-            
-           var u = Math.sqrt(Math.abs(this.Dot(this).s)); if (Math.abs(u)<1E-5) return this.Add(Element.Scalar(1));
-           var v = this.Wedge(this).Scale(-1/(2*u)); 
+           var u = Math.sqrt(Math.abs(this.Dot(this).s));
+           if (Math.abs(u)<1E-5) return this.Add(Element.Scalar(1));
+
+           var v = this.Wedge(this).Scale(-1/(2*u));
            var res2 = Element.Add(Element.Sub(Math.cos(u),v.Scale(Math.sin(u))),Element.Div(Element.Mul((Element.Add(Math.sin(u),v.Scale(Math.cos(u)))),this),(Element.Add(u,v))));
-           //if ([...test].map(x=>x.toFixed(1))+'' != [...res2].map(x=>x.toFixed(1))+'') { console.log(test, res2); debugger }
-           
-           return res2;       
+           return res2;
         }
-        if (!taylor && Math.abs(this[0])<1E-9 && !options.over) {
+        if (!taylor && Math.abs(this[0])<1E-9) {
           return this.Grade(2).Split().reduce((total,simple)=>{
             var square = simple.Mul(simple).s, len = Math.sqrt(Math.abs(square));
             if (len <= 1E-5) return total.Mul(Element.Scalar(1).Add(simple));
             if (square <  0) return total.Mul(Element.Scalar(Math.cos(len)).Add(simple.Scale(Math.sin(len)/len)) );
             return total.Mul(Element.Scalar(Math.cosh(len)).Add(simple.Scale(Math.sinh(len)/len)) );
           },Element.Scalar(1));
-        }  
-        if (options.dual) { var f=Math.exp(this.s); return this.map((x,i)=>i?x*f:f); }
-        var res = Element.Scalar(1), y=1, M= this.Scale(1), N=this.Scale(1); for (var x=1; x<15; x++) { res=res.Add(M.Scale(1/y)); M=M.Mul(N); y=y*(x+1); }; 
+        }
+        var res = Element.Scalar(1), y=1, M= this.Scale(1), N=this.Scale(1); for (var x=1; x<15; x++) { res=res.Add(M.Scale(1/y)); M=M.Mul(N); y=y*(x+1); };
         return res;
       }
-      
+
     // Log - only for up to 3D PGA for now
       Log (compat = false) {
-        if (options.over) return;
         if (!compat) {
-          if (tot==4 && q==0 && r==1 && !options.over) { // https://www.researchgate.net/publication/360528787_Normalization_Square_Roots_and_the_Exponential_and_Logarithmic_Maps_in_Geometric_Algebras_of_Less_than_6D
-            if (Math.abs(this.s)>=.99999) return Element.Bivector(this[5],this[6],this[7],0,0,0).Scale(Math.sign(this.s));
-            var a = 1/(1 - this[0]*this[0]), b = Math.acos(this[0])*Math.sqrt(a), c = a*this[15]*(1 - this[0]*b);
-            return Element.Bivector( c*this[10] + b*this[5], -c*this[9] + b*this[6], c*this[8] + b*this[7], b*this[8], b*this[9], b*this[10] );
-          }
-          return this.Factorize().reduce((sum,bi)=>{
-            var [ci,si] = [bi.s, bi.Grade(2)];
-            var square = si.Mul(si).s;
-            var len = Math.sqrt(Math.abs(square));
-            if (Math.abs(square) < 1E-5) return sum.Add(si);
-            if (square < 0) return sum.Add(si.Scale(Math.acos(ci)/len));
-            return sum.Add(si.Scale(Math.acosh(ci)/len));
-          },Element.Scalar(0));
+          // https://www.researchgate.net/publication/360528787_Normalization_Square_Roots_and_the_Exponential_and_Logarithmic_Maps_in_Geometric_Algebras_of_Less_than_6D
+          if (Math.abs(this.s)>=.99999) return Element.Bivector(this[5],this[6],this[7],0,0,0).Scale(Math.sign(this.s));
+          var a = 1/(1 - this[0]*this[0]), b = Math.acos(this[0])*Math.sqrt(a), c = a*this[15]*(1 - this[0]*b);
+          return Element.Bivector( c*this[10] + b*this[5], -c*this[9] + b*this[6], c*this[8] + b*this[7], b*this[8], b*this[9], b*this[10] );
         }
-        var b = this.Grade(2), bdb = Element.Dot(b,b).s;
-        if (Math.abs(bdb)<=1E-5) return this.s<0?b.Scale(-1):b;
-        var s = Math.sqrt(-bdb), bwb = Element.Wedge(b,b); 
-        if (Math.abs(bwb[bwb.length-1])<=1E-5 || Math.abs(this.s)<=1E-5) return b.Scale(Math.atan2(s,this.s)/s);
-        var p = bwb.Scale(-1/(2*s));
-        return Element.Mul(Element.Mul((Element.Add(Math.atan2(s,this.s),p.Scale(1/this.s))),b),Element.Sub(s,p)).Scale(1/(s*s));        
-      }  
+      }
 
     // Helper for efficient inverses. (custom involutions - negates grades in arguments).
       Map () { var res=new Element(); return super.Map(res,...arguments); }
@@ -693,7 +400,7 @@
             sum = R[i_n+i];
             for (k=0;k<i; k++)  sum -= s[k]*R[i_n+k];
             R[i_n+i] = sum;
-          }        
+          }
           // subst
           for (i=0; i<n; i++) for (x[i]=a[i],j=0;j<=i-1;j++) x[i]-=R[i*n+j]*x[j];
           for (i=n-1; i>=0; i--) for (x[i] /= R[i*n+i], j=i+1; j<n; j++) x[i] -= R[j*n+i]*x[j];
@@ -793,15 +500,15 @@
         if (options.conformal && tot==4) var ni = options.ni||this.Coeff(4,1,3,1), no = options.no||this.Coeff(4,0.5,3,-0.5), minus_no = no.Scale(-1);
         var ww=options.width, hh=options.height, cvs=options.canvas, tpcam=new Element([0,0,0,0,0,0,0,0,0,0,0,-5,0,0,1,0]),tpy=this.Coeff(4,1),tp=new Element(),
       // project 3D to 2D. This allows to render 3D and 2D PGA with the same code.
-        project=(o)=>{ if (!o) return o; while (o.call) o=o(); 
-//          if (o instanceof Element && o.length == 32) o = new Element([o[0],o[1],o[2],o[3],o[4],o[6],o[7],o[8],o[10],o[11],o[13],o[16],o[17],o[19],o[22],o[26]]); 
+        project=(o)=>{ if (!o) return o; while (o.call) o=o();
+//          if (o instanceof Element && o.length == 32) o = new Element([o[0],o[1],o[2],o[3],o[4],o[6],o[7],o[8],o[10],o[11],o[13],o[16],o[17],o[19],o[22],o[26]]);
           // Clip 3D lines so they don't go past infinity.
           if (o instanceof Element && o.length == 16 && o[8]**2+o[9]**2+o[10]**2>0.0001) {
             o = [[options.clip||2,1,0,0],[-(options.clip||2),1,0,0],[options.clip||2,0,1,0],[-(options.clip||2),0,1,0],[options.clip||2,0,0,1],[-(options.clip||2),0,0,1]].map(v=>{
               var r = Element.Vector(...v).Wedge(o); return r[14]?r.Scale(1/r[14], r):undefined;
             }).filter(x=>x && Math.abs(x[13])<= (options.clip||2)+0.001 && Math.abs(x[12]) <= (options.clip||2)+0.001 && Math.abs(x[11]) <= (options.clip||2) + 0.001).slice(0,2);
             return o.map(o=>(tpcam).Vee(options.camera.Mul(o).Mul(options.camera.Conjugate)).Wedge(tpy));
-          } 
+          }
           // Convert 3D planes to polies.
           if (o instanceof Element && o.length == 16 && o.Grade(1).Length>0.01) {
             var m = Element.Add(1, Element.Mul(o.Normalized, Element.Coeff(3,1))).Normalized, e0 = 0;
@@ -810,8 +517,6 @@
           }
           return (tot==4 && o instanceof Element && o.length==16)?(tpcam).Vee(options.camera.Mul(o).Mul(options.camera.Conjugate)).Wedge(tpy):(o.length==2**tot)?Element.sw(options.camera,o):o;
         };
-      // gl escape.
-        if (options.gl && !(tot==4 && options.conformal)) return Element.graphGL(f,options); if (options.up) return Element.graphGL2(f,options);
       // if we get an array or function without parameters, we render c2d or p2d SVG points/lines/circles/etc
         if (!(f instanceof Function) || f.length===0) {
         // Our current cursor, color, animation state and 2D mapping.
@@ -830,7 +535,7 @@
               options.grid?(()=>{
                 if (tot==4 && !options.conformal) {
                   const lines3d = (n,from,to,j,l=0, ox=0, oy=0, alpha=1)=>[`<G stroke-opacity="${alpha}" fill-opacity="${alpha}">`,...[...Array(n+1)].map((x,i)=>{
-                    var f=from.map((x,i)=>x*(i==3?1:(options.gridSize||1))), t=to.map((x,i)=>x*(i==3?1:(options.gridSize||1))); f[j] = t[j] = (i-(n/2))/(n/2) * (options.gridSize||1); 
+                    var f=from.map((x,i)=>x*(i==3?1:(options.gridSize||1))), t=to.map((x,i)=>x*(i==3?1:(options.gridSize||1))); f[j] = t[j] = (i-(n/2))/(n/2) * (options.gridSize||1);
                     var D3a = Element.Trivector(...f), D2a = project(D3a), D3b = Element.Trivector(...t), D2b = project(D3b);
                     var lx=options.scale*D2a[drm[2]]/D2a[drm[1]]; if (drm[1]==6||drm[1]==14) lx*=-1; var ly=-options.scale*D2a[drm[3]]/D2a[drm[1]];
                     var lx2=options.scale*D2b[drm[2]]/D2b[drm[1]]; if (drm[1]==6||drm[1]==14) lx2*=-1; var ly2=-options.scale*D2b[drm[3]]/D2b[drm[1]];
@@ -856,89 +561,7 @@
                        .concat(options.labels?[...Array(4*n+1)].map((x,xi)=>(xi-n*2==0)?``:`<text text-anchor="middle" font-size="0.05" x="${((xi-n*2)*0.2-(tot<4?2*cy:0))*s}" y="0.06" >${((xi-n*2)*0.2).toFixed(1)}</text>`):[])
                        .concat(options.labels?[...Array(4*n+1)].map((x,xi)=>`<text text-anchor="end" font-size="0.05" y="${((xi-n*2)*0.2-(tot<4?2*cx:0))*s-0.01}" x="-0.01" >${((xi-n*2)*-0.2).toFixed(1)}</text>`):[]).join('')+'</G>';
             })():''}
-            // Handle conformal 2D elements.
-            ${options.conformal?f.map&&f.map((o,oidx)=>{
-            // Optional animation handling.
-              if((o==Element.graph && or!==false)||(oidx==0&&options.animate&&or!==false)) { anim=true; requestAnimationFrame(()=>{var r=build(origf,(!res)||(document.body.contains(res))).innerHTML; if (res) res.innerHTML=r; }); if (!options.animate) return; }
-            // Resolve expressions passed in.
-              while (o.call) o=o();
-              if (options.ipns && o instanceof Element) o = o.Dual;
-              var sc = options.scale;
-              var lineWidth = options.lineWidth || 1;
-              var pointRadius = options.pointRadius || 1;
-              var dash_for_r2 = (r2, render_r, target_width) => {
-                // imaginary circles are dotted
-                if (r2 >= 0) return 'none';
-                var half_circum = render_r*Math.PI;
-                var width = half_circum / Math.max(Math.round(half_circum / target_width), 1);
-                return `${width} ${width}`;
-              };
-            // Arrays are rendered as segments or polygons. (2 or more elements)
-              if (o instanceof Array)  { lx=ly=lr=0; o=o.map(o=>{ while(o.call)o=o(); return o.Scale(-1/o.Dot(ni).s); }); o.forEach((o)=>{lx+=sc*(o.e1);ly+=sc*(-o.e2)});lx/=o.length;ly/=o.length; return o.length>2?`<POLYGON STYLE="pointer-events:none; fill:${color};opacity:0.7" points="${o.map(o=>(sc*o.e1+','+(-o.e2*sc)+' '))}"/>`:`<LINE style="pointer-events:none" x1=${o[0].e1*sc} y1=${-o[0].e2*sc} x2=${o[1].e1*sc} y2=${-o[1].e2*sc} stroke="${color||'#888'}"/>`; }
-            // Allow insertion of literal svg strings.
-              if (typeof o =='string' && o[0]=='<') { return o; }
-            // Strings are rendered at the current cursor position.
-              if (typeof o =='string') { var res2=(o[0]=='_')?'':`<text x="${lx}" y="${ly}" font-family="Verdana" font-size="${options.fontSize*0.1||0.1}" style="pointer-events:none" fill="${color||'#333'}" transform="rotate(${lr},${lx},${ly})">&nbsp;${o}&nbsp;</text>`; ly+=0.14; return res2; }
-            // Numbers change the current color.
-              if (typeof o =='number') { color='#'+(o+(1<<25)).toString(16).slice(-6); return ''; };
-            // All other elements are rendered ..
-              var ni_part = o.Dot(no.Scale(-1));  // O_i + n_o O_oi
-              var no_part = ni.Scale(-1).Dot(o);  // O_o + O_oi n_i
-              if (ni_part.VLength * 1e-6 > no_part.VLength) {
-                // direction or dual - nothing to render
-                return "";
-              }
-              var no_ni_part = no_part.Dot(no.Scale(-1));  // O_oi
-              var no_only_part = ni.Wedge(no_part).Dot(no.Scale(-1));  // O_o
-
-              /* Note: making 1e-6 smaller increases the maximum circle radius before they are drawn as lines */
-              if (no_ni_part.VLength * 1e-6 > no_only_part.VLength) {
-                var is_flat = true;
-                var direction = no_ni_part;
-              }
-              else {
-                var is_flat = false;
-                var direction = no_only_part;
-              }
-              // normalize to make the direction unitary
-              var dl = direction.Length;
-              o = o.Scale(1/dl);
-              direction = direction.Scale(1/dl)
-
-              var b0=direction.Grade(0).VLength>0.001,b1=direction.Grade(1).VLength>0.001,b2=direction.Grade(2).VLength>0.001;
-              if (!is_flat && b0 && !b1 && !b2) {
-                // Points
-                if (direction.s < 0) { o = Element.Sub(o); }
-                lx=sc*(o.e1); ly=sc*(-o.e2); lr=0; return res2=`<CIRCLE onmousedown="this.parentElement.sel=${oidx}" cx="${lx}" cy="${ly}" r="${pointRadius*0.03}" fill="${color||'green'}"/>`;
-              } else if (is_flat && !b0 && b1 && !b2) {
-                // Lines.
-                var loc=minus_no.LDot(o).Div(o), att=ni.Dot(o);
-                lx=sc*(-loc.e1); ly=sc*(loc.e2); lr=Math.atan2(-o[14],o[13])/Math.PI*180; return `<LINE style="pointer-events:none" x1=${lx-10} y1=${ly} x2=${lx+10} y2=${ly} stroke="${color||'#888'}" transform="rotate(${lr},${lx},${ly})"/>`;
-              } else if (!is_flat && !b0 && !b1 && b2) {
-                // Circles
-                var loc=o.Div(ni.LDot(o)); lx=sc*(-loc.e1); ly=sc*(loc.e2);
-                var r2=o.Mul(o.Conjugate).s;
-                var r = Math.sqrt(Math.abs(r2))*sc;
-                return `<CIRCLE onmousedown="this.parentElement.sel=${oidx}" cx="${lx}" cy="${ly}" r="${r}" fill="none" stroke="${color||'green'}" stroke-dasharray="${dash_for_r2(r2, r, lineWidth*0.020)}"/>`;
-              } else if (!is_flat && !b0 && b1 && !b2) {
-                // Point Pairs.
-                lr=0; var ei=ni,eo=no, nix=o.Wedge(ei), sqr=o.LDot(o).s/nix.LDot(nix).s, r=Math.sqrt(Math.abs(sqr)), attitude=((ei.Wedge(eo)).LDot(nix)).Normalized.Mul(Element.Scalar(r)), pos=o.Div(nix); pos=pos.Div( pos.LDot(Element.Sub(ei)));
-                if (nix==0) { pos = o.Dot(Element.Coeff(4,-1)); sqr=-1; }
-                lx=sc*(pos.e1); ly=sc*(-pos.e2);
-                if (sqr==0) return `<CIRCLE onmousedown="this.parentElement.sel=${oidx}" cx="${lx}" cy="${ly}" r="${pointRadius*0.03}" stroke-width="${lineWidth*0.01}" fill="none" stroke="${color||'green'}"/>`;
-                // Draw imaginary pairs hollow
-                if (sqr > 0) var fill = color||'green', stroke = 'none', dash_array = 'none';
-                else var fill = 'none', stroke = color||'green';
-                lx=sc*(pos.e1+attitude.e1); ly=sc*(-pos.e2-attitude.e2);
-                var res2=`<CIRCLE onmousedown="this.parentElement.sel=${oidx}" cx="${lx}" cy="${ly}" r="${pointRadius*0.03}" fill="${fill}" stroke-width="${lineWidth*0.01}" stroke="${stroke}" stroke-dasharray="${dash_for_r2(sqr, pointRadius*0.03, lineWidth*0.020)}" />`;
-                lx=sc*(pos.e1-attitude.e1); ly=sc*(-pos.e2+attitude.e2);
-                return res2+`<CIRCLE onmousedown="this.parentElement.sel=${oidx}" cx="${lx}" cy="${ly}" r="${pointRadius*0.03}" fill="${fill}" stroke-width="${lineWidth*0.01}" stroke="${stroke}" stroke-dasharray="${dash_for_r2(sqr, pointRadius*0.03, lineWidth*0.020)}" />`;
-              } else {
-                /* Unrecognized */
-                return "";
-              }
-            // Handle projective 2D and 3D elements.
-            }):f.map&&f.map((o,oidx)=>{  if((o==Element.graph && or!==false)||(oidx==0&&options.animate&&or!==false)) { anim=true; requestAnimationFrame(()=>{var r=build(origf,(!res)||(document.body.contains(res))).innerHTML; if (res) res.innerHTML=r; }); if (!options.animate) return; } while (o instanceof Function) o=o(); o=(o instanceof Array)?o.map(project):project(o); if (o===undefined) return;
+            ${f.map&&f.map((o,oidx)=>{  if((o==Element.graph && or!==false)||(oidx==0&&options.animate&&or!==false)) { anim=true; requestAnimationFrame(()=>{var r=build(origf,(!res)||(document.body.contains(res))).innerHTML; if (res) res.innerHTML=r; }); if (!options.animate) return; } while (o instanceof Function) o=o(); o=(o instanceof Array)?o.map(project):project(o); if (o===undefined) return;
             // dual option dualizes before render
               if (options.dual && o instanceof Element) o = o.Dual;
             // line segments and polygons
@@ -962,17 +585,17 @@
         // Create the initial svg and install the mousehandlers.
           res=build(f); res.value=f; res.options=options; res.setAttribute("stroke-width",options.lineWidth*0.005||0.005);
           res.remake = (animate)=>{ options.animate = animate; if (animate) { var r=build(origf,(!res)||(document.body.contains(res))).innerHTML; if (res) res.innerHTML=r; }; return res;};
-          //onmousedown="if(evt.target==this)this.sel=undefined" 
+          //onmousedown="if(evt.target==this)this.sel=undefined"
           var mousex,mousey,cammove=false;
           res.onwheel=(e)=>{ e.preventDefault(); options.scale = Math.min(5,Math.max(0.1,(options.scale||1)-e.deltaY*0.0001)); if (!anim) {var r=build(origf,(!res)||(document.body.contains(res))).innerHTML; if (res) res.innerHTML=r; } }
           res.onmousedown=(e)=>{ if (e.target == res) res.sel=undefined; mousex = e.clientX; mousey = e.clientY; cammove = true;  }
-          res.onmousemove=(e)=>{ 
-            if (cammove && tot==4 && !options.conformal) { 
+          res.onmousemove=(e)=>{
+            if (cammove && tot==4 && !options.conformal) {
               if (!e.buttons) { cammove=false; return; };
               var [dx,dy] = [(options.scale || 1)*(e.clientX - mousex)*3, 3*(options.scale || 1)*(e.clientY - mousey)];
               [mousex,mousey] = [e.clientX,e.clientY];
               if (res.sel !== undefined && f[res.sel].set) {
-                 var [cw,ch] = [res.clientWidth, res.clientHeight]; 
+                 var [cw,ch] = [res.clientWidth, res.clientHeight];
                  var ox = (1/(options.scale || 1)) * ((e.offsetX / cw) - 0.5) * (cw>ch?(cw/ch):1);
                  var oy = (1/(options.scale || 1)) * ((e.offsetY / ch) - 0.5) * (ch>cw?(ch/cw):1);
                  var tb  = Element.sw(options.camera,f[res.sel]);
@@ -990,769 +613,13 @@
             if (res.sel===undefined || f[res.sel] == undefined || f[res.sel].set == undefined || !e.buttons) return;
             var resx=res.getBoundingClientRect().width,resy=res.getBoundingClientRect().height,
                 x=((e.clientX-res.getBoundingClientRect().left)/(resx/4||128)-2)*(resx>resy?resx/resy:1),y=((e.clientY-res.getBoundingClientRect().top)/(resy/4||128)-2)*(resy>resx?resy/resx:1);
-            x/=options.scale;y/=options.scale; 
-            if (options.conformal) { f[res.sel].set(this.Coeff(1,x,2,-y).Add(no).Add(ni.Scale(0.5*(x*x+y*y))) ) } 
-                              else { f[res.sel][drm[2]]=((drm[1]==6)?-x:x)-((tot<4)?2*options.camera.e01:0); f[res.sel][drm[3]]=-y+((tot<4)?2*options.camera.e02:0); f[res.sel][drm[1]]=1; f[res.sel].set(f[res.sel].Normalized)} 
+            x/=options.scale;y/=options.scale;
+            if (options.conformal) { f[res.sel].set(this.Coeff(1,x,2,-y).Add(no).Add(ni.Scale(0.5*(x*x+y*y))) ) }
+                              else { f[res.sel][drm[2]]=((drm[1]==6)?-x:x)-((tot<4)?2*options.camera.e01:0); f[res.sel][drm[3]]=-y+((tot<4)?2*options.camera.e02:0); f[res.sel][drm[1]]=1; f[res.sel].set(f[res.sel].Normalized)}
             if (!anim) {var r=build(origf,(!res)||(document.body.contains(res))).innerHTML; if (res) res.innerHTML=r; }
             res.dispatchEvent(new CustomEvent('input')) };
           return res;
         }
-      // 1d and 2d functions are rendered on a canvas.
-        cvs=cvs||document.createElement('canvas'); if(ww)cvs.width=ww; if(hh)cvs.height=hh; var w=cvs.width,h=cvs.height,context=cvs.getContext('2d'), data=context.getImageData(0,0,w,h);
-      // Grid support for the canvas.  
-        const [x_from,x_to,y_from,y_to]=options.range||[-1,1,1,-1];
-        function drawGrid() {
-          const [X,Y]=[x=>(x-x_from)*w/(x_to-x_from),y=>(y-y_from)*h/(y_to-y_from)]
-          context.strokeStyle = "#008800"; context.lineWidth = 1;
-          // X and Y axis
-          context.beginPath();
-          context.moveTo(X(x_from), Y(0)); context.lineTo(X(x_to  ), Y(0)); context.stroke();
-          context.moveTo(X(0), Y(y_from)); context.lineTo(X(0), Y(y_to  )); context.stroke();
-          // Draw ticks
-          context.strokeStyle = "#00FF00"; context.lineWidth = 2; context.font = "10px Arial"; context.fillStyle = "#448844";
-          for (var i=x_from,j=y_from,ii=0; ii<=10; ++ii) {
-              context.beginPath(); j+= (y_to-y_from)/10; i+=(x_to-x_from)/10;
-              context.moveTo(X(i), Y(-(y_to - y_from)/200)); context.lineTo(X(i), Y((y_to - y_from)/200)); context.stroke();
-              if(i.toFixed(1)!=0) context.fillText(i.toFixed(1), X(i-(x_to-x_from)/100), Y(-(y_to-y_from)/40));
-              context.moveTo(X((x_to-x_from)/200), Y(j)); context.lineTo(X(-(x_to-x_from)/200), Y(j)); context.stroke();
-              if(j.toFixed(1)!=0) context.fillText(j.toFixed(1), X((x_to-x_from)/100), Y(j));
-          }
-        }
-      // two parameter functions .. evaluate for both and set resulting color.
-        if (f.length==2) for (var px=0; px<w; px++) for (var py=0; py<h; py++) { var res=f(px/w*(x_to-x_from)+x_from, py/h*(y_to-y_from)+y_from); res=res.buffer?[].slice.call(res):res.slice?res:[res,res,res]; data.data.set(res.map(x=>x*255).concat([255]),py*w*4+px*4); }
-      // one parameter function.. go over x range, use result as y.
-        else if (f.length==1) for (var px=0; px<w; px++) { var res=f(px/w*(x_to-x_from)+x_from); res=Math.round((res/(y_to-y_from)+(-y_from/(y_to-y_from)))*h); if (res > 0 && res < h-1) data.data.set([0,0,0,255],res*w*4+px*4); }
-        context.putImageData(data,0,0);
-        if (f.length == 1 || f.length == 2) if (options.grid) drawGrid();
-        return cvs;
-      }
-
-    // webGL2 Graphing function. (for OPNS/IPNS implicit 2D and 1D surfaces in 3D space).
-      static graphGL2(f,options) {
-      // Create canvas, get webGL2 context.
-        var canvas=document.createElement('canvas'); canvas.style.width=options.width||''; canvas.style.height=options.height||''; canvas.style.backgroundColor='#EEE';
-        if (options.width && options.width.match && options.width.match(/px/i)) canvas.width = parseFloat(options.width)*(options.devicePixelRatio||devicePixelRatio||1); if (options.height && options.height.match && options.height.match(/px/i)) canvas.height = parseFloat(options.height)*(options.devicePixelRatio||devicePixelRatio||1);
-        var gl=canvas.getContext('webgl2',{alpha:options.alpha||false,preserveDrawingBuffer:true,antialias:true,powerPreference:'high-performance'});
-        var gl2=!!gl; if (!gl) gl=canvas.getContext('webgl',{alpha:options.alpha||false,preserveDrawingBuffer:true,antialias:true,powerPreference:'high-performance'});
-        gl.clearColor(240/255,240/255,240/255,1.0); gl.enable(gl.DEPTH_TEST); if (!gl2) { gl.getExtension("EXT_frag_depth"); gl.va = gl.getExtension('OES_vertex_array_object'); }
-        else gl.va = { createVertexArrayOES : gl.createVertexArray.bind(gl), bindVertexArrayOES : gl.bindVertexArray.bind(gl), deleteVertexArrayOES : gl.deleteVertexArray.bind(gl)  }
-      // Compile vertex and fragment shader, return program.
-        var compile=(vs,fs)=>{
-          var s=[gl.VERTEX_SHADER,gl.FRAGMENT_SHADER].map((t,i)=>{
-            var r=gl.createShader(t); gl.shaderSource(r,[vs,fs][i]); gl.compileShader(r);
-            return gl.getShaderParameter(r, gl.COMPILE_STATUS)&&r||console.error(gl.getShaderInfoLog(r));
-          });
-          var p = gl.createProgram(); gl.attachShader(p, s[0]); gl.attachShader(p, s[1]); gl.linkProgram(p);
-          gl.getProgramParameter(p, gl.LINK_STATUS)||console.error(gl.getProgramInfoLog(p));
-          return p;
-        };
-      // Create vertex array and buffers, upload vertices and optionally texture coordinates.
-        var createVA=function(vtx) {
-          var r = gl.va.createVertexArrayOES(); gl.va.bindVertexArrayOES(r);
-          var b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
-          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vtx), gl.STATIC_DRAW);
-          gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(0);
-          return {r,b}
-        },
-      // Destroy Vertex array and delete buffers.
-        destroyVA=function(va) {
-          if (va.b) gl.deleteBuffer(va.b); if (va.r) gl.va.deleteVertexArrayOES(va.r);
-        }
-      // Drawing function
-        var M=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,5,1];
-        var draw=function(p, tp, vtx, color, color2, ratio, texc, va, b,color3,r,g){
-            gl.useProgram(p); gl.uniformMatrix4fv(gl.getUniformLocation(p, "mv"),false,M);
-            gl.uniformMatrix4fv(gl.getUniformLocation(p, "p"),false, [5,0,0,0,0,5*(ratio||1),0,0,0,0,1,2,0,0,-1,0])
-            gl.uniform3fv(gl.getUniformLocation(p, "color"),new Float32Array(color));
-            gl.uniform3fv(gl.getUniformLocation(p, "color2"),new Float32Array(color2));
-            if (color3) gl.uniform3fv(gl.getUniformLocation(p, "color3"),new Float32Array(color3));
-            if (b) gl.uniform1fv(gl.getUniformLocation(p, "b"),(new Float32Array(counts[g])).map((x,i)=>b[g][i]||0));
-            if (texc) gl.uniform1i(gl.getUniformLocation(p, "texc"),0);
-            if (r) gl.uniform1f(gl.getUniformLocation(p,"ratio"),r);
-            var v; if (!va) v = createVA(vtx); else gl.va.bindVertexArrayOESOES(va.r);
-            gl.drawArrays(tp, 0, (va&&va.tcount)||vtx.length/3);
-            if (v) destroyVA(v);
-        }
-      // Compile the OPNS renderer. (sphere tracing)
-        var programs = [], genprog = grade=>compile(`${gl2?"#version 300 es":""}
-             ${gl2?"in":"attribute"} vec4 position; ${gl2?"out":"varying"} vec4 Pos; uniform mat4 mv; uniform mat4 p;
-             void main() { Pos=mv*position; gl_Position = p*Pos; }`,
-            `${!gl2?"#extension GL_EXT_frag_depth : enable":"#version 300 es"}
-             precision highp float;
-             uniform vec3 color; uniform vec3 color2;
-             uniform vec3 color3; uniform float b[${counts[grade]}];
-             uniform float ratio; ${gl2?"out vec4 col;":""}
-             ${gl2?"in":"varying"} vec4 Pos;
-             float product_len (in float z, in float y, in float x, in float[${counts[grade]}] b) {
-                ${this.nVector(options.up.length>tot?2:1,[])[options.IPNS?"IPNS_GLSL":"OPNS_GLSL"](this.nVector(grade,[]), options.up)}
-                return sqrt(abs(sum));
-             }
-             vec3 find_root (in vec3 start, vec3 dir, in float thresh) {
-                vec3 orig=start; 
-                float lastd = 1000.0; 
-                const int count=${(options.maxSteps||80)};
-                for (int i=0; i<count; i++) {
-                  float d = product_len(start[0],start[1],start[2],b);
-                  float diff = ${(options.stepSize||0.0001)}*(1.0+2000.0*d);
-                  if (d < thresh) return start + dir*(lastd-thresh)/(lastd-d)*diff;
-                  lastd = d; start += dir*diff;
-                }
-                return orig;
-             }
-             void main() {
-               vec3 dir = ((-Pos[0]/5.0)*color + color2 + vec3(0.0,Pos[1]/5.0*ratio,0.0)); 
-               vec3 p = -5.0*normalize(color2) + dir+vec3(0.0,0.0,1.0); dir = normalize(dir);
-               vec3 L = 5.0*normalize( -0.5*color + 0.85*color2 + vec3(0.0,-0.5,0.0) );
-               vec3 d2 = find_root( p , dir, ${grade!=tot-1?(options.thresh||0.2):"0.0075"} );
-               float dl2 = dot(d2-p,d2-p); const float h=0.0001;
-               if (dl2>0.0) {
-                 vec3 n = normalize(vec3(
-                        product_len(d2[0]+h,d2[1],d2[2],b)-product_len(d2[0]-h,d2[1],d2[2],b),
-                        product_len(d2[0],d2[1]+h,d2[2],b)-product_len(d2[0],d2[1]-h,d2[2],b),
-                        product_len(d2[0],d2[1],d2[2]+h,b)-product_len(d2[0],d2[1],d2[2]-h,b)
-                      ));
-                 ${gl2?"gl_FragDepth":"gl_FragDepthEXT"} = dl2/50.0;
-                 ${gl2?"col":"gl_FragColor"} = vec4(max(0.2,abs(dot(n,normalize(L-d2))))*color3 + pow(abs(dot(n,normalize(normalize(L-d2)+dir))),100.0),1.0);
-               } else discard;
-             }`),genprog2D = grade=>compile(`${gl2?"#version 300 es":""}
-             ${gl2?"in":"attribute"} vec4 position; ${gl2?"out":"varying"} vec4 Pos; uniform mat4 mv; uniform mat4 p;
-             void main() { Pos=mv*position; gl_Position = p*Pos; }`,
-            `${!gl2?"#extension GL_EXT_frag_depth : enable":"#version 300 es"}
-             precision highp float;
-             uniform vec3 color; uniform vec3 color2;
-             uniform vec3 color3; uniform float b[${counts[grade]}];
-             uniform float ratio; ${gl2?"out vec4 col;":""}
-             ${gl2?"in":"varying"} vec4 Pos;
-             float product_len (in float z, in float y, in float x, in float[${counts[grade]}] b) {
-                ${this.nVector(1,[])[options.IPNS?"IPNS_GLSL":"OPNS_GLSL"](this.nVector(grade,[]), options.up)}
-                return sqrt(abs(sum));
-             }
-             void main() {
-               vec3 p = -5.0*normalize(color2) -Pos[0]/5.0*color + color2 + vec3(0.0,Pos[1]/5.0*ratio,0.0); 
-               float d2 = 1.0 - 150.0*pow(product_len( p[0]*5.0, p[1]*5.0, p[2]*5.0, b),2.0);
-               if (d2>0.0) {
-                 ${gl2?"col":"gl_FragColor"} = vec4(color3,d2);
-               } else discard;
-             }`)
-      // canvas update will (re)render the content.
-        var armed=0;
-        canvas.update = (x)=>{
-        // Start by updating canvas size if needed and viewport.
-          var s = getComputedStyle(canvas); if (s.width) { canvas.width = parseFloat(s.width)*(options.devicePixelRatio||devicePixelRatio||1); canvas.height = parseFloat(s.height)*(options.devicePixelRatio||devicePixelRatio||1); }
-          gl.viewport(0,0, canvas.width|0,canvas.height|0); var r=canvas.width/canvas.height;
-        // Defaults, resolve function input
-          var a,p=[],l=[],t=[],c=[.5,.5,.5],alpha=0,lastpos=[-2,2,0.2]; gl.clear(gl.COLOR_BUFFER_BIT+gl.DEPTH_BUFFER_BIT); while (x.call) x=x();
-        // Loop over all items to render.
-          for (var i=0,ll=x.length;i<ll;i++) {
-            var e=x[i]; while (e&&e.call) e=e(); if (e==undefined) continue;
-            if (typeof e == "number") { alpha=((e>>>24)&0xff)/255; c[0]=((e>>>16)&0xff)/255; c[1]=((e>>>8)&0xff)/255; c[2]=(e&0xff)/255; }
-            if (e instanceof Element){
-              var tt = options.spin?-performance.now()*options.spin/1000:-options.h||0; tt+=Math.PI/2; var r = canvas.height/canvas.width;
-              var g=tot-1; while(!e[g]&&g>1) g--;
-              if (!programs[tot-1-g]) programs[tot-1-g] = (options.up.find(x=>x.match&&x.match("z")))?genprog(g):genprog2D(g);
-              gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-              draw(programs[tot-1-g],gl.TRIANGLES,[-2,-2,0,-2,2,0,2,-2,0,-2,2,0,2,-2,0,2,2,0],[Math.cos(tt),0,-Math.sin(tt)],[Math.sin(tt),0,Math.cos(tt)],undefined,undefined,undefined,e,c,r,g);
-              gl.disable(gl.BLEND);
-            }
-          }
-          // if we're no longer in the page .. stop doing the work.
-          armed++; if (document.body.contains(canvas)) armed=0; if (armed==2) return;
-          canvas.value=x; if (options&&!options.animate) canvas.dispatchEvent(new CustomEvent('input'));
-          if (options&&options.animate) { requestAnimationFrame(canvas.update.bind(canvas,f,options)); }
-          if (options&&options.still) { canvas.value=x; canvas.dispatchEvent(new CustomEvent('input')); canvas.im.width=canvas.width; canvas.im.height=canvas.height; canvas.im.src = canvas.toDataURL(); }
-        }
-        // Basic mouse interactivity. needs more love.
-        var sel=-1; canvas.oncontextmenu = canvas.onmousedown = (e)=>{ e.preventDefault(); e.stopPropagation(); sel=-2;
-          var rc = canvas.getBoundingClientRect(), mx=(e.x-rc.left)/(rc.right-rc.left)*2-1, my=((e.y-rc.top)/(rc.bottom-rc.top)*-4+2)*canvas.height/canvas.width;
-          canvas.onwheel=e=>{e.preventDefault(); e.stopPropagation(); options.z = (options.z||5)+e.deltaY/100; if (!options.animate) requestAnimationFrame(canvas.update.bind(canvas,f,options));}
-          canvas.onmouseup=e=>sel=-1; canvas.onmouseleave=e=>sel=-1;
-          canvas.onmousemove=(e)=>{
-            var rc = canvas.getBoundingClientRect();
-            var mx =(e.movementX)/(rc.right-rc.left)*2, my=((e.movementY)/(rc.bottom-rc.top)*-2)*canvas.height/canvas.width;
-            if (sel==-2) { options.h =  (options.h||0)+mx; if (!options.animate) requestAnimationFrame(canvas.update.bind(canvas,f,options)); return; }; if (sel < 0) return;
-          }
-        }
-        canvas.value = f.call?f():f; canvas.options = options;
-        if (options&&options.still) {
-          var i=new Image(); canvas.im = i; return requestAnimationFrame(canvas.update.bind(canvas,f,options)),i;
-        } else return requestAnimationFrame(canvas.update.bind(canvas,f,options)),canvas;
-
-      }
-
-
-    // webGL Graphing function. (for parametric defined objects)
-      static graphGL(f,options) {
-      // Create a canvas, webgl2 context and set some default GL options.
-        var canvas=document.createElement('canvas'); canvas.style.width=options.width||''; canvas.style.height=options.height||''; canvas.style.backgroundColor='#EEE';
-        if (options.width && options.width.match && options.width.match(/px/i)) canvas.width = parseFloat(options.width); if (options.height && options.height.match && options.height.match(/px/i)) canvas.height = parseFloat(options.height);
-        var gl=canvas.getContext('webgl',{alpha:options.alpha||false,antialias:true,preserveDrawingBuffer:options.still||true,powerPreference:'high-performance'});
-        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); if (!options.alpha) gl.clearColor(240/255,240/255,240/255,1.0); gl.getExtension("OES_standard_derivatives"); gl.va=gl.getExtension("OES_vertex_array_object");
-      // Compile vertex and fragment shader, return program.
-        var compile=(vs,fs)=>{
-          var s=[gl.VERTEX_SHADER,gl.FRAGMENT_SHADER].map((t,i)=>{
-            var r=gl.createShader(t); gl.shaderSource(r,[vs,fs][i]); gl.compileShader(r);
-            return gl.getShaderParameter(r, gl.COMPILE_STATUS)&&r||console.error(gl.getShaderInfoLog(r));
-          });
-          var p = gl.createProgram(); gl.attachShader(p, s[0]); gl.attachShader(p, s[1]); gl.linkProgram(p);
-          gl.getProgramParameter(p, gl.LINK_STATUS)||console.error(gl.getProgramInfoLog(p));
-          return p;
-        };
-      // Create vertex array and buffers, upload vertices and optionally texture coordinates.
-        var createVA=function(vtx, texc, idx, clr) {
-              var r = gl.va.createVertexArrayOES(); gl.va.bindVertexArrayOES(r);
-              var b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
-              gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vtx), gl.STATIC_DRAW);
-              gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(0);
-              if (texc){
-                var b2=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b2);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texc), gl.STATIC_DRAW);
-                gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(1);
-              }
-              if (clr){
-                var b3=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b3);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(clr), gl.STATIC_DRAW);
-                gl.vertexAttribPointer(texc?2:1, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(texc?2:1);
-              }
-              if (idx) {
-                var b4=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b4);
-                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
-              }
-              return {r,b,b2,b4,b3}
-            },
-      // Destroy Vertex array and delete buffers.
-            destroyVA=function(va) {
-              [va.b,va.b2,va.b4,va.b3].forEach(x=>{if(x) gl.deleteBuffer(x)}); if (va.r) gl.va.deleteVertexArrayOES(va.r);
-            }
-      // Default modelview matrix, convert camera to matrix (biquaternion->matrix)
-        var M=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,5,1], mtx = (x,iscam=true)=>{ var t=options.spin?performance.now()*options.spin/1000:-options.h||0, t2=options.p||0;
-          var ct = Math.cos(t), st= Math.sin(t), ct2 = Math.cos(t2), st2 = Math.sin(t2), xx=options.posx||0, y=options.posy||0, z=options.posz||0, zoom=options.z||5;
-          if (tot==5) return [ct,st*-st2,st*ct2,0,0,ct2,st2,0,-st,ct*-st2,ct*ct2,0,xx*ct+z*-st,y*ct2+(xx*st+z*ct)*-st2,y*st2+xx*st+z*ct*ct2+zoom,1];
-          x=x.Normalized; var y=x.Mul(x.Dual),X=x.e23,Y=-x.e13,Z=-x.e12,W=x.s;
-          var xx = X*X, xy = X*Y, xz = X*Z, xw = X*W, yy = Y*Y, yz = Y*Z, yw = Y*W, zz = Z*Z, zw = Z*W;
-          var mtx = [ 1-2*(yy+zz), 2*(xy+zw), 2*(xz-yw), 0, 2*(xy-zw), 1-2*(xx+zz), 2*(yz+xw), 0, 2*(xz+yw), 2*(yz-xw), 1-2*(xx+yy), 0, -2*y.e23, -2*y.e13, 2*y.e12+(iscam?5:0), 1];
-          return mtx;
-        }
-      // Render the given vertices. (autocreates/destroys vertex array if not supplied).
-        var draw=function(p, tp, vtx, color, color2, ratio, texc, va, cbuf, allowcull=true){
-          gl.useProgram(p); gl.uniformMatrix4fv(gl.getUniformLocation(p, "mv"),false,M);
-          gl.uniformMatrix4fv(gl.getUniformLocation(p, "p"),false, [5,0,0,0,0,5*(ratio||2),0,0,0,0,1,2,0,0,-1,0])
-          gl.uniform3fv(gl.getUniformLocation(p, "color"),new Float32Array(color));
-          gl.uniform3fv(gl.getUniformLocation(p, "color2"),new Float32Array(color2));
-          //if (texc) gl.uniform1i(gl.getAttribLocation(p, "texc"),0);
-          var v; if (!va) v = createVA(vtx, texc, undefined, cbuf, p); else gl.va.bindVertexArrayOES(va.r);
-          if (options.cull && allowcull) gl.enable(gl.CULL_FACE); 
-          if (va && va.b4) {
-            gl.drawElements(tp, va.tcount, gl.UNSIGNED_SHORT, 0);
-          } else {
-            gl.drawArrays(tp, 0, (va&&va.tcount)||vtx.length/3);
-          }
-          if (v) destroyVA(v);
-          if (options.cull) gl.disable(gl.CULL_FACE); 
-        }
-      // Program for the geometry. Derivative based normals. Basic lambert shading.
-        var program = compile(`attribute vec4 position; varying vec4 Pos; uniform mat4 mv; uniform mat4 p;
-                 void main() { gl_PointSize=12.0; Pos=mv*position; gl_Position = p*Pos; }`,
-                `#extension GL_OES_standard_derivatives : enable
-                 precision highp float; uniform vec3 color; uniform vec3 color2; varying vec4 Pos;
-                 void main() { vec3 ldir = normalize(Pos.xyz - vec3(2.0,2.0,-4.0));
-                 vec3 normal = normalize(cross(dFdx(Pos.xyz), dFdy(Pos.xyz))); float l=dot(normal,ldir);
-                 vec3 E = normalize(-Pos.xyz); vec3 R = normalize(reflect(ldir,normal));
-                 gl_FragColor = vec4(max(0.0,l)*color+vec3(0.5*pow(max(dot(R,E),0.0),20.0))+color2, 1.0);  }`);
-        var programSphere = compile(`attribute vec4 position; varying vec4 Pos; varying vec3 N; uniform mat4 mv; uniform mat4 p;
-                 void main() { gl_PointSize=12.0; Pos=mv*position; N = normalize(position.xzy); gl_Position = p*Pos; }`,
-                `#extension GL_OES_standard_derivatives : enable
-                 precision highp float; uniform vec3 color; uniform vec3 color2; varying vec4 Pos; varying vec3 N;
-                 void main() { vec3 ldir = normalize(Pos.xyz - vec3(2.0,2.0,-4.0));
-                 vec3 normal = N; float l=dot(normal,ldir);
-                 vec3 E = normalize(-Pos.xyz); vec3 R = normalize(reflect(ldir,normal));
-                 gl_FragColor = vec4(max(0.0,l)*color+vec3(0.5*pow(max(dot(R,E),0.0),20.0))+color2, 1.0);  }`);
-        var programPoint = compile(`attribute vec4 position; varying vec4 Pos; uniform mat4 mv; uniform mat4 p;
-                 void main() { gl_PointSize=${((options.pointRadius||1)*(options.devicePixelRatio||devicePixelRatio||1)*8.0).toFixed(2)}; Pos=mv*position; gl_Position = p*Pos; }`,
-                `precision highp float; uniform vec3 color; uniform vec3 color2; varying vec4 Pos;
-                 void main() {  float distanceToCenter = length(gl_PointCoord - vec2(0.5)); if (distanceToCenter>0.5) discard; 
-                 gl_FragColor = vec4(color+color2, (distanceToCenter<0.5?1.0:0.0));  }`);
-        var programline = compile(`
-                 attribute vec4 position;  // current point.
-                 attribute vec2 texc;      // x = +w or -w, alternating. y = opacity.
-                 attribute vec4 col;       // next point. (extrapolated for end point)
-                 uniform vec3 color;       // r=aspect g=thickness
-                 uniform mat4 mv,p;        // modelview and projection matrix
-                 varying vec2 tc;
-                 void main() { 
-                 // Convert to clipspace.
-                   vec4 cp = p*mv*vec4(position.xyz,1.0);
-                   vec2 cs = cp.xy / abs(cp.w);
-                   vec4 np = p*mv*vec4(col.xyz,1.0);
-                   vec2 ns = np.xy / abs(np.w);
-                 // compensate aspect
-                   cs.x *= color.r;
-                   ns.x *= color.r; 
-                 // clipspace line direction.
-                   vec2 dir = normalize(cs-ns);
-                 // Calculate screenspace normal.
-                   vec2 normal = vec2( -dir.y, dir.x); 
-                 // Line scaling and aspect fix.
-                   normal *= color.g * 5.0;
-                   normal.x /= color.r;
-                 // Pass through texture coordinates for edge softening  
-                   tc = vec2(texc.x / abs(texc.x), texc.y);
-                   gl_Position = cp + vec4(normal*texc.x,0.0,0.0);
-                 }`,
-                `precision highp float; 
-                 uniform vec3 color2; 
-                 varying vec2 tc; 
-                 void main() { 
-//                   gl_FragColor = vec4(abs(tc.x),abs(tc.x),abs(tc.x),1.0-abs(tc.x)); 
-                   gl_FragColor = vec4(color2,(1.0-pow(abs(tc.x),2.0))*tc.y); 
-                 }`);
-        var programcol = compile(`attribute vec4 position; attribute vec3 col; varying vec3 Col; varying vec4 Pos; uniform mat4 mv; uniform mat4 p;
-                 void main() { gl_PointSize=6.0; Pos=mv*position; gl_Position = p*Pos; Col=col; }`,
-                `#extension GL_OES_standard_derivatives : enable
-                 precision highp float; uniform vec3 color; uniform vec3 color2; varying vec4 Pos; varying vec3 Col;
-                 void main() { vec3 ldir = normalize(Pos.xyz - vec3(1.0,1.0,2.0));
-                 vec3 normal = normalize(cross(dFdx(Pos.xyz), dFdy(Pos.xyz))); float l=dot(normal,ldir);
-                 vec3 E = normalize(-Pos.xyz); vec3 R = normalize(reflect(ldir,normal));
-                 gl_FragColor = vec4(max(0.3,l)*Col+vec3(pow(max(dot(R,E),0.0),20.0))+color2, 1.0); ${options.shader||''}  }`);
-        var programmot = compile(`attribute vec4 position; attribute vec2 texc; attribute vec3 col; varying vec3 Col; varying vec4 Pos; uniform mat4 mv; uniform mat4 p; uniform vec3 color2;
-                 void main() { gl_PointSize=2.0; float blend=fract(color2.x+texc.r)*0.5; Pos=mv*(position*(1.0-blend) + (blend)*vec4(col,1.0)); gl_Position = p*Pos; Col=vec3(length(col-position.xyz)*1.); gl_PointSize = 8.0 -  Col.x; Col.y=sin(blend*2.*3.1415); }`,
-                `precision highp float; uniform vec3 color; uniform vec3 color2; varying vec4 Pos; varying vec3 Col; 
-                 void main() {  float distanceToCenter = length(gl_PointCoord - vec2(0.5));gl_FragColor = vec4(1.0-pow(Col.x,2.0),0.0,0.0,(.6-Col.x*0.05)*(distanceToCenter<0.5?1.0:0.0)*Col.y);  }`);
-        gl.lineWidth(options.lineWidth||1); // doesn't work yet (nobody supports it)
-      // Create a font texture, lucida console or otherwise monospaced.
-        var fw=33, font = Object.assign(document.createElement('canvas'),{width:(19+94)*fw,height:48}),
-            ctx = Object.assign(font.getContext('2d'),{font:'bold 48px lucida console, monospace'}),
-            ftx = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, ftx);
-            for (var i=33; i<127; i++) ctx.fillText(String.fromCharCode(i),(i-33)*fw,40);
-            var specialChars = "∞≅¹²³₀₁₂₃₄₅₆₇₈₉⋀⋁∆⋅"; specialChars.split('').forEach((x,i)=>ctx.fillText(x,(i-33+127)*fw,40));
-            // 2.0 gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,94*fw,32,0,gl.RGBA,gl.UNSIGNED_BYTE,font);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, font);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      // Font rendering program. Renders billboarded fonts, transforms offset passed as color2.
-        var program2 = compile(`attribute vec4 position; attribute vec2 texc; varying vec2 tex; varying vec4 Pos; uniform mat4 mv; uniform mat4 p; uniform vec3 color2;
-                 void main() { tex=texc; gl_PointSize=6.0; vec4 o=mv*vec4(color2,0.0); Pos=(-1.0/(o.z-mv[3][2]))*position+vec4(mv[3][0],mv[3][1],mv[3][2],0.0)+o; gl_Position = p*Pos; }`,
-                `precision highp float; uniform vec3 color; varying vec4 Pos; varying vec2 tex;
-                 uniform sampler2D texm; void main() { vec4 c = texture2D(texm,tex); if (c.a<0.01) discard; gl_FragColor = vec4(color,c.a);}`);
-      // Helpers for line drawing. Convert line segments to triangles.
-        const line_to_tri  = ([ax,ay,az,bx,by,bz]) => [ax,ay,az,ax,ay,az,bx,by,bz,bx,by,bz,ax,ay,az,bx,by,bz];
-        const line_to_tri2 = ([ax,ay,az,bx,by,bz]) => [bx,by,bz,bx,by,bz,2*bx-ax,2*by-ay,2*bz-az,2*bx-ax,2*by-ay,2*bz-az,bx,by,bz,2*bx-ax,2*by-ay,2*bz-az];
-      // Conformal space needs a bit extra magic to extract euclidean parametric representations.
-        if (tot==5 && options.conformal) var ni = Element.Coeff(4,1).Add(Element.Coeff(5,1)), no = Element.Coeff(4,0.5).Sub(Element.Coeff(5,0.5));
-        var interprete = (x)=>{
-          if (!(x instanceof Element)) return { tp:0 };
-          if (options.ipns) x=x.Dual;
-          // tp = { 0:unknown 1:point 2:line, 3:plane, 4:circle, 5:sphere
-          var X2 = (x.Mul(x)).s, tp=0, weight2, opnix = ni.Wedge(x), ipnix = ni.LDot(x),
-              attitude, pos, normal, tg,btg,epsilon = 0.000001/(options.scale||1), I3=Element.Coeff(16,-1);
-          var x2zero = Math.abs(X2) < epsilon, ipnixzero = ipnix.VLength < epsilon, opnixzero = opnix.VLength < epsilon;
-          if (opnixzero && ipnixzero) {                 // free flat
-          } else if (opnixzero && !ipnixzero) {         // bound flat (lines)
-            attitude = no.Wedge(ni).LDot(x);
-            weight2 = Math.abs(attitude.LDot(attitude).s)**.5;
-            pos = attitude.LDot(x.Reverse); //Inverse);
-            pos = [-pos.e15/pos.e45,-pos.e25/pos.e45,-pos.e34/pos.e45];
-            if (x.Grade(3).VLength) {
-              normal = [attitude.e1/weight2,attitude.e2/weight2,attitude.e3/weight2]; tp=2;
-            } else if (x.Grade(2).VLength) { // point pair with ni
-              tp = 1;
-            } else {
-              normal = Element.LDot(Element.Mul(attitude,1/weight2),I3).Normalized;
-              var r=normal.Mul(Element.Coeff(3,1)); if (r[0]==-1) r[0]=1; else {r[0]+=1; r=r.Normalized;}
-              tg = [...r.Mul(Element.Coeff(1,1)).Mul(r.Conjugate)].slice(1,4);
-              btg = [...r.Mul(Element.Coeff(2,1)).Mul(r.Conjugate)].slice(1,4);
-              normal = [...normal.slice(1,4)]; tp=3;
-            }
-          } else if (!opnixzero && ipnixzero) {         // dual bound flat
-          } else if (x2zero) {                          // bound vec,biv,tri (points)
-            if (options.ipns) x=x.Dual;
-            attitude = ni.Wedge(no).LDot(ni.Wedge(x));
-            pos = [...(Element.LDot(1/(ni.LDot(x)).s,x)).slice(1,4)].map(x=>-x);
-            tp=1;
-          } else if (!x2zero) {                          // round (point pair,circle,sphere)
-            tp = x.Grade(3).VLength?4:x.Grade(2).VLength?6:5;
-            var nix  = ni.Wedge(x), nix2 = (nix.Mul(nix)).s;
-            attitude = ni.Wedge(no).LDot(nix);
-            pos = [...(x.Mul(ni).Mul(x)).slice(1,4)].map(x=>-x/(2.0*nix2));
-            weight2 = Math.abs((x.LDot(x)).s / nix2)**.5;
-            if (tp==4) {
-              if (x.LDot(x).s < 0) { weight2 = -weight2; }
-              normal = Element.LDot(Element.Mul(attitude,1/weight2),I3).Normalized;
-              var r=normal.Mul(Element.Coeff(3,1)); if (r[0]==-1) r[0]=1; else {r[0]+=1; r=r.Normalized;}
-              tg = [...r.Mul(Element.Coeff(1,1)).Mul(r.Conjugate)].slice(1,4);
-              btg = [...r.Mul(Element.Coeff(2,1)).Mul(r.Conjugate)].slice(1,4);
-              normal = [...normal.slice(1,4)];
-            } else if (tp==6) {
-              weight2 = (x.LDot(x).s < 0)?-(weight2):weight2;
-              normal = Element.Mul(attitude.Normalized,weight2).slice(1,4);
-            } else {
-              normal = [...((Element.LDot(Element.Mul(attitude,1/weight2),I3)).Normalized).slice(1,4)];
-            }
-          }
-          return {tp,pos:pos?pos.map(x=>x*(options.scale||1)):[0,0,0],normal,tg,btg,weight2:weight2*(options.scale||1)}
-        };
-      // canvas update will (re)render the content.
-        var armed=0,sphere,e14 = Element.Coeff(14,1);
-        canvas.update = (x)=>{
-          if (!canvas.parentElement) return;
-        // restore from still..
-          if (options && !options.still && canvas.im && canvas.im.parentElement) { canvas.im.parentElement.insertBefore(canvas,canvas.im); canvas.im.parentElement.removeChild(canvas.im); }
-        // Start by updating canvas size if needed and viewport.
-          var s = getComputedStyle(canvas); if (s.width) { canvas.width = parseFloat(s.width)*(options.devicePixelRatio||devicePixelRatio||1); canvas.height = parseFloat(s.height)*(options.devicePixelRatio||devicePixelRatio||1); }
-          gl.viewport(0,0, canvas.width|0,canvas.height|0); var r=canvas.width/canvas.height;
-        // Defaults, resolve function input
-          var a,p=[],l=[],t=[],c=[.5,.5,.5],alpha=0,lastpos=[-1.95,1.5,0,1]; gl.clear(gl.COLOR_BUFFER_BIT+gl.DEPTH_BUFFER_BIT); while (x.call) x=x();
-        // Create default camera matrix and initial lastposition (contra-compensated for camera)
-          M = mtx(options.camera); 
-          var a = new this(); a.set([1,-2,1.90*canvas.height/canvas.width,0],1); a = options.camera.Conjugate.Mul(a.Dual).Mul(options.camera);
-          lastpos = a.slice(11,14).map((y,i)=>(i<=1?1:-1)*y/a[14]).reverse();
-          var linediff = new this(); linediff.set([0,0,-0.12*2000/canvas.width*(options.fontSize||1),0],1);
-          linediff = options.camera.Conjugate.Mul(linediff.Dual).Mul(options.camera).slice(11,14).map((y,i)=>(i<=1?1:-1)*y/a[14]).reverse();
-        // Grid.
-          if (options.grid) {
-            const gr = options.gridSize||1;
-            if (!options.gridLines) { options.gridLines=[[],[],[]]; for (var i=-gr; i<=gr; i+=gr/10) {
-                options.gridLines[0].push(i,-gr,gr, i,-gr,-gr, gr,-gr,i, -gr,-gr,i); 
-                options.gridLines[1].push(i,gr,gr, i,-gr,gr, gr,i,gr, -gr,i,gr); 
-                options.gridLines[2].push(-gr,i,gr, -gr,i,-gr, -gr,gr,i, -gr,-gr,i);
-            }}
-            var ltest = [], ltest2 = [], ttest = []; for (var j=0; j<3; ++j) for (var i=0; i<options.gridLines[j].length; i+=6) {
-              ltest.push(...line_to_tri(options.gridLines[j].slice(i,i+6)));
-              ltest2.push(...line_to_tri2(options.gridLines[j].slice(i,i+6)));
-              var w = ((i/12)|0)%10 == 0 ? 2 : ((i/12)|0)%5 == 0 ?1.5:.75;
-              ttest.push(w,.5,-w,.5,w,.5,w,.5,-w,.5,-w,.5);
-            }
-            gl.depthMask(false); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.BLEND); 
-            draw(programline, gl.TRIANGLES, ltest, [canvas.width/canvas.height, .003, 0.0],  [0,0,0], canvas.width/canvas.height, ttest, undefined, ltest2, false);   
-            gl.depthMask(true); gl.disable(gl.BLEND);
-          }
-        // Z-buffer override.
-          if (options.noZ) gl.depthMask(false);
-        // Loop over all items to render.
-          for (var i=0,ll=x.length;i<ll;i++) {
-            var e=x[i]; while (e&&e.call&&e.length==0) e=e(); if (e==undefined) continue;
-          // CGA
-            if (tot==5 && options.conformal) {
-              if (e instanceof Array && e.length==2) { e.forEach(x=>{ while (x.call) x=x.call(); x=interprete(x);l.push.apply(l,x.pos); });  var d = {tp:-1}; }
-              else if (e instanceof Array && e.length==3) { e.forEach(x=>{ while (x.call) x=x.call(); x=interprete(x);t.push.apply(t,x.pos); });  var d = {tp:-1}; }
-              else var d = interprete(e);
-              if (d.tp) lastpos=d.pos;
-              if (d.tp==1) p.push.apply(p,d.pos);
-              if (d.tp==2) { l.push.apply(l,d.pos.map((x,i)=>x-d.normal[i]*3)); l.push.apply(l,d.pos.map((x,i)=>x+d.normal[i]*3)); }
-              if (d.tp==3) { t.push.apply(t,d.pos.map((x,i)=>x+d.tg[i]+d.btg[i])); t.push.apply(t,d.pos.map((x,i)=>x-d.tg[i]+d.btg[i])); t.push.apply(t,d.pos.map((x,i)=>x+d.tg[i]-d.btg[i]));
-                             t.push.apply(t,d.pos.map((x,i)=>x-d.tg[i]+d.btg[i])); t.push.apply(t,d.pos.map((x,i)=>x+d.tg[i]-d.btg[i])); t.push.apply(t,d.pos.map((x,i)=>x-d.tg[i]-d.btg[i])); }
-              if (d.tp==4) {
-                var ne=0,la=0;
-                if (d.weight2<0) { c[0]=1;c[1]=0;c[2]=0; }
-                for (var j=0; j<65; j++) {
-                  ne = d.pos.map((x,i)=>x+Math.cos(j/32*Math.PI)*d.weight2*d.tg[i]+Math.sin(j/32*Math.PI)*d.weight2*d.btg[i]); if (ne&&la&&(d.weight2>0||j%2==0)) { l.push.apply(l,la); l.push.apply(l,ne); }; la=ne;
-                }
-              }
-              if (d.tp==6) {
-                if (d.weight2<0) { c[0]=1;c[1]=0;c[2]=0; }
-                if (options.useUnnaturalLineDisplayForPointPairs) {
-                  l.push.apply(l,d.pos.map((x,i)=>x-d.normal[i]*(options.scale||1)));
-                  l.push.apply(l,d.pos.map((x,i)=>x+d.normal[i]*(options.scale||1)));
-                }
-                p.push.apply(p,d.pos.map((x,i)=>x-d.normal[i]*(options.scale||1)));
-                p.push.apply(p,d.pos.map((x,i)=>x+d.normal[i]*(options.scale||1)));
-              }
-              if (d.tp==5) {
-                if (!sphere) {
-                  var pnts = [], tris=[], S=Math.sin, C=Math.cos, pi=Math.PI, W=96, H=48;
-                  for (var j=0; j<W+1; j++) for (var k=0; k<H; k++) {
-                    pnts.push( [S(2*pi*j/W)*S(pi*k/(H-1)), C(2*pi*j/W)*S(pi*k/(H-1)), C(pi*k/(H-1))]);
-                    if (j && k) {
-                      tris.push.apply(tris, pnts[(j-1)*H+k-1]);tris.push.apply(tris, pnts[(j-1)*H+k]);tris.push.apply(tris, pnts[j*H+k-1]);
-                      tris.push.apply(tris, pnts[j*H+k-1]); tris.push.apply(tris, pnts[(j-1)*H+k]); tris.push.apply(tris, pnts[j*H+k]);
-                  }}
-                  sphere = { va : createVA(tris,undefined) }; sphere.va.tcount = tris.length/3;
-                }
-                var oldM = M;
-                M=[].concat.apply([],Element.Mul([[d.weight2,0,0,0],[0,d.weight2,0,0],[0,0,d.weight2,0],[d.pos[0],d.pos[1],d.pos[2],1]],[[M[0],M[1],M[2],M[3]],[M[4],M[5],M[6],M[7]],[M[8],M[9],M[10],M[11]],[M[12],M[13],M[14],M[15]]])).map(x=>x.s);
-                gl.enable(gl.BLEND); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); gl.blendColor(1,1,1,1-(alpha||0.1)); gl.enable(gl.CULL_FACE)
-                draw(programSphere,gl.TRIANGLES,undefined,c,[0,0,0],r,undefined,sphere.va);
-                gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-                M = oldM;
-              }
-              if (i==ll-1 || d.tp==0) {
-              // render triangles, lines, points.
-                if (alpha) { gl.enable(gl.BLEND); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); gl.blendColor(1,1,1,1-alpha); }
-                if (t.length) { draw(program,gl.TRIANGLES,t,c,[0,0,0],r); t.forEach((x,i)=>{ if (i%9==0) lastpos=[0,0,0]; lastpos[i%3]+=x/3; }); t=[];  }
-                if (l.length) { 
-                  var ltest = [], ltest2 = [], ttest = []; for (var li=0; li<l.length; li+=6) {
-                    ltest.push(...line_to_tri(l.slice(li,li+6)));
-                    ltest2.push(...line_to_tri2(l.slice(li,li+6)));
-                    var w = (options.lineWidth||1);
-                    ttest.push(w,1-alpha,-w,1-alpha,w,1-alpha,w,1-alpha,-w,1-alpha,-w,1-alpha);
-                  }
-                  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.BLEND);
-                  gl.depthMask(false);
-                  draw(programline, gl.TRIANGLES, ltest, [canvas.width/canvas.height,.003,0.0], c, canvas.width/canvas.height, ttest, undefined, ltest2, false);   
-                  var l2=l.length-1; lastpos=[(l[l2-2]+l[l2-5])/2,(l[l2-1]+l[l2-4])/2+0.1,(l[l2]+l[l2-3])/2]; l=[]; 
-                  gl.depthMask(true);
-                  gl.disable(gl.BLEND);
-                }
-                if (p.length) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); draw(programPoint,gl.POINTS,p,[0,0,0],c,r); lastpos = p.slice(-3); lastpos[0]-=0.075; lastpos[1]+=0.075; p=[]; gl.disable(gl.BLEND); }
-                // Motor orbits
-                  if ( e.call && e.length==2 && !e.va3) { var countx=e.dx||32,county=e.dy||32;
-                    var temp=new Float32Array(3*countx*county),o=new Float32Array(3),et=[];
-                    for (var pp=0,ii=0; ii<countx; ii++) for (var jj=0; jj<county; jj++,pp+=3)
-                      temp.set(Element.sw(e(ii/(countx-1),jj/(county-1)),no).slice(1,4),pp);
-                    for (ii=0; ii<countx-1; ii++) for (var jj=0; jj<county; jj++)
-                      et.push((ii+0)*county+(jj+0),(ii+0)*county+(jj+1),(ii+1)*county+(jj+1),(ii+0)*county+(jj+0),(ii+1)*county+(jj+1),(ii+1)*county+(jj+0));
-                    e.va3 = createVA(temp,undefined,et.map(x=>x%(countx*county))); e.va3.tcount = (countx-1)*county*2*3;
-                  }
-                  if ( e.call && e.length==1 && !e.va2) { var countx=e.dx||256;
-                    var temp=new Float32Array(3*countx),o=new Float32Array(3),et=[];
-                    for (var ii=0; ii<countx; ii++) { temp.set(Element.sw(e(ii/(countx-1)),no).slice(1,4),ii*3); if (ii) et.push(ii-1,ii); }
-                    e.va2 = createVA(temp,undefined,et); e.va2.tcount = et.length;
-                  }
-                // Experimental display of motors using particle systems.
-                  if (e instanceof Object && e.motor) {
-                    if (!e.va || e.recalc) {
-                       var seed = 1; function random() { var x = Math.sin(seed++) * 10000; return x - Math.floor(x); }
-                       e.xRange = e.xRange === undefined ? 1:e.xRange; e.yRange = e.yRange === undefined ? 1:e.yRange; e.zRange = e.zRange === undefined ? 1:e.zRange;
-                       var vtx=[], tx=[], vtx2=[];
-                       for (var i=0; i<(e.zRange*e.xRange*e.yRange===0?2500:Math.pow(e.zRange*e.xRange*e.yRange,1/3)*12000); i++) {
-                         var [x,y,z] = [random()*(2*e.xRange)-e.xRange,random()*2*e.yRange-e.yRange,random()*2*e.zRange-e.zRange];
-                         var xyz = (x*x+y*y+z*z)*0.5;
-                         var p  = Element.Vector(x,y,z,xyz-0.5,xyz+0.5);
-                         var p2 = Element.sw(e.motor,p);
-                         var d = p2[5]-p2[4]; p2[1]/=d; p2[2]/=d; p2[3]/=d;
-                         tx.push(random(), random());
-                         vtx.push(...p.slice(1,4)); vtx2.push(...p2.slice(1,4));
-                       }  
-                       e.va = createVA(vtx,tx,undefined,vtx2); e.va.tcount = vtx.length/3;
-                       e.recalc = false;
-                    } 
-                    var time = performance.now()/1000;
-                    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.DEPTH_TEST);
-                    draw(programmot, gl.POINTS,t,c,[time%1,0,0],r,undefined,e.va);
-                    gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
-                  }
-                // we could also be an object with cached vertex array of triangles ..
-                  else if (e.va || e.va2 || e.va3 || (e instanceof Object && e.data)) {
-                    // Create the vertex array and store it for re-use.
-                    if (!e.va3 && !e.va2) {
-                      var et=[],et2=[],et3=[],lc=0,pc=0,tc=0; e.data.forEach(e=>{
-                        if (e instanceof Array && e.length==3) { tc++; e.forEach(x=>{ while (x.call) x=x.call(); x=interprete(x);et3.push.apply(et3,x.pos); });  var d = {tp:-1}; }
-                        else {
-                          var d = interprete(e);
-                          if (d.tp==1) { pc++; et.push(...d.pos);  }
-                          if (d.tp==2) { lc++; et2.push(...d.pos.map((x,i)=>x-d.normal[i]*10),...d.pos.map((x,i)=>x+d.normal[i]*10)); }
-                        }
-                      });
-                      e.va = createVA(et,undefined); e.va.tcount = pc;
-                      e.va2 = createVA(et2,undefined); e.va2.tcount = lc*2;
-                      e.va3 = createVA(et3,undefined); e.va3.tcount = tc*3;
-                    }
-                    // render the vertex array.
-                    if (e.va  && e.va.tcount) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); draw(programPoint,gl.POINTS,undefined,[0,0,0],c,r,undefined,e.va); gl.disable(gl.BLEND); };
-                    if (e.va2 && e.va2.tcount) draw(program,gl.LINES,undefined,[0,0,0],c,r,undefined,e.va2);
-                    if (e.va3 && e.va3.tcount) draw(program,gl.TRIANGLES,undefined,c,[0,0,0],r,undefined,e.va3);
-                  }
-                if (alpha) gl.disable(gl.BLEND); // no alpha for text printing.
-              // setup a new color
-                if (typeof e == "number") { alpha=((e>>>24)&0xff)/255; c[0]=((e>>>16)&0xff)/255; c[1]=((e>>>8)&0xff)/255; c[2]=(e&0xff)/255; }
-                if (typeof(e)=='string') {
-                  if (options.htmlText) {
-                    if (!x['_'+i]) { console.log('creating div'); Object.defineProperty(x,'_'+i, {value: document.body.appendChild(document.createElement('div')), enumerable:false }) };
-                    var rc = canvas.getBoundingClientRect(), div = x['_'+i];
-                    var pos2 = Element.Mul( [[M[0],M[4],M[8],M[12]],[M[1],M[5],M[9],M[13]],[M[2],M[6],M[10],M[14]],[M[3],M[7],M[11],M[15]]], [...lastpos,1]).map(x=>x.s);
-                    pos2 = Element.Mul( [[5,0,0,0],[0,5*(r||2),0,0],[0,0,1,-1],[0,0,2,0]], pos2).map(x=>x.s).map((x,i,a)=>x/a[3]);
-                    Object.assign(div.style,{position:'fixed',pointerEvents:'none',left:rc.left + (rc.right-rc.left)*(pos2[0]/2+0.5),top: rc.top + (rc.bottom-rc.top)*(-pos2[1]/2+0.5) - 20});
-                    if (div.last != e) { div.innerHTML = e; div.last = e; if (self.renderMathInElement) self.renderMathInElement(div); }
-                  } else { 
-                    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-                    var fw = 113, mapChar = (x)=>{ var c = x.charCodeAt(0)-33; if (c>=94) c = 94+specialChars.indexOf(x); return c/fw; }
-                    draw(program2,gl.TRIANGLES,
-                         [...Array(e.length*6*3)].map((x,i)=>{ var x=0,z=-0.2, o=x+(i/18|0)*1.1; return (0.05*(options.z||5))*[o,-1,z,o+1.2,-1,z,o,1,z,o+1.2,-1,z,o+1.2,1,z,o,1,z][i%18]}),c,lastpos,r,
-                         [...Array(e.length*6*2)].map((x,i)=>{ var o=mapChar(e[i/12|0]); return [o,1,o+1/fw,1,o,0,o+1/fw,1,o+1/fw,0,o,0][i%12]})); gl.disable(gl.BLEND); lastpos[1]+=linediff[1]; lastpos[0]+=linediff[0]; lastpos[2]+=linediff[2];
-                  }      
-                }
-              }
-              continue;
-            }
-          // PGA
-            if (options.dual && e instanceof Element) e = e.Dual;
-          // Convert planes to polygons.
-            if (e instanceof Element && e.Grade(1).Length > 0.001) {
-              var m = Element.Add(1, Element.Mul(e.Normalized, Element.Coeff(3,1))).Normalized, e0 = 0;
-              e=Element.sw(m,[[-1,-1],[-1,1],[1,1],[-1,-1],[1,1],[1,-1]].map(([x,z])=>Element.Trivector(x*e.Length,e0,z*e.Length,1)));
-            }
-          // Convert lines to line segments.
-            if (e instanceof Element && e.Grade(2).Length)
-               e=[e.LDot(e14).Wedge(e).Add(e.Wedge(Element.Coeff(1,1)).Mul(Element.Coeff(0,-(options.clip||3)))),e.LDot(e14).Wedge(e).Add(e.Wedge(Element.Coeff(1,1)).Mul(Element.Coeff(0,options.clip||3)))]
-                 .map(x=>x[14]<0?x.Scale(-1):x);
-          // If euclidean point, store as point, store line segments and triangles.
-            if (e.e123) p.push.apply(p,e.slice(11,14).map((y,i)=>(i<=1?1:-1)*y/e[14]).reverse());
-            if (e instanceof Array && e.length==2) l=l.concat.apply(l,e.map(x=>[...x.slice(11,14).map((y,i)=>(i<=1?1:-1)*y/x[14]).reverse()]));
-            if (e instanceof Array && e.length%3==0) t=t.concat.apply(t,e.map(x=>[...x.slice(11,14).map((y,i)=>(i<=1?1:-1)*y/x[14]).reverse()]));
-          // Render orbits of parametrised motors, as well as lists of points.. 
-            function sw_mot_orig(A,R){
-              var a0=A[0],a1=A[5],a2=A[6],a3=A[7],a4=A[8],a5=A[9],a6=A[10],a7=A[15];
-              R[2] = -2*(a0*a3+a4*a7-a6*a2-a5*a1);
-              R[1] = -2*(a4*a1-a0*a2-a6*a3+a5*a7);
-              R[0] =  2*(a0*a1+a4*a2+a5*a3+a6*a7);
-              return R
-            }
-            if ( e.call && e.length==1) { var count=e.dx||64;
-              for (var ismot,xx,o=new Float32Array(3),ii=0; ii<count; ii++) {
-                if (ii>1) l.push(xx[0],xx[1],xx[2]);
-                var m = e(ii/(count-1));
-                if (ii==0) ismot = m[0]||m[5]||m[6]||m[7]||m[8]||m[9]||m[10];
-                xx = ismot?sw_mot_orig(m,o):m.slice(11,14).map((y,i)=>(i<=1?1:-1)*y).reverse(); //Element.sw(e(ii/(count-1)),o);
-                l.push(xx[0],xx[1],xx[2]);
-              }
-            }
-            if ( e.call && e.length==2 && !e.va) { var countx=e.dx||64,county=e.dy||32;
-              var temp=new Float32Array(3*countx*county),o=new Float32Array(3),et=[];
-              for (var pp=0,ii=0; ii<countx; ii++) for (var jj=0; jj<county; jj++,pp+=3) temp.set(sw_mot_orig(e(ii/(countx-1),jj/(county-1)),o),pp);
-              for (ii=0; ii<countx-1; ii++) for (var jj=0; jj<county; jj++) et.push((ii+0)*county+(jj+0),(ii+0)*county+(jj+1),(ii+1)*county+(jj+1),(ii+0)*county+(jj+0),(ii+1)*county+(jj+1),(ii+1)*county+(jj+0));
-              e.va = createVA(temp,undefined,et.map(x=>x%(countx*county))); e.va.tcount = (countx-1)*county*2*3;
-            }
-          // Experimental display of motors using particle systems.
-            if (e instanceof Object && e.motor) {
-              if (!e.va || e.recalc) {
-                 var seed = 1; function random() { var x = Math.sin(seed++) * 10000; return x - Math.floor(x); }
-                 e.xRange = e.xRange === undefined ? 1:e.xRange; e.yRange = e.yRange === undefined ? 1:e.yRange; e.zRange = e.zRange === undefined ? 1:e.zRange;
-                 var vtx=[], tx=[], vtx2=[];
-                 for (var i=0; i<(e.zRange===0?5000:60000); i++) {
-                   var p  = Element.Trivector(random()*(2*e.xRange)-e.xRange,random()*2*e.yRange-e.yRange,random()*2*e.zRange-e.zRange,1);
-//                   var p2 = Element.sw(e.motor,p);
-                   var p2 = e.motor.Mul(p).Mul(e.motor.Inverse);
-                   tx.push(random(), random());
-                   vtx.push(...p.slice(11,14).reverse()); vtx2.push(...p2.slice(11,14).reverse());
-                 }  
-                 e.va = createVA(vtx,tx,undefined,vtx2); e.va.tcount = vtx.length/3;
-                 e.recalc = false;
-              } 
-              var time = performance.now()/1000;
-              gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.DEPTH_TEST);
-              draw(programmot, gl.POINTS,t,c,[time%1,0,0],r,undefined,e.va);
-              gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
-            }
-          // we could also be an object with cached vertex array of triangles ..
-            else if (e.va || (e instanceof Object && e.data)) {
-              // Create the vertex array and store it for re-use.
-              if (!e.va) {
-                if (e.idx) {
-                  var et = e.data.map(x=>[...x.slice(11,14).map((y,i)=>(i<=1?1:-1)*y/x[14]).reverse()]).flat();
-                } else {
-                  var et=[]; e.data.forEach(e=>{if (e instanceof Array && e.length==3) et=et.concat.apply(et,e.map(x=>[...x.slice(11,14).map((y,i)=>(i<=1?1:-1)*y/x[14]).reverse()]));});
-                }
-                e.va = createVA(et,undefined,e.idx,e.color?new Float32Array(e.color):undefined); e.va.tcount = (e.idx && e.idx.length)?e.idx.length:e.data.length*3;
-              }
-              // render the vertex array.
-              var M5 = Element.Scalar(1).Add(Element.Coeff(7,2.5));
-              if (e.transform) {
-                  var M1 = mtx(e.transform, false);
-                  var M2 = mtx(M5.Mul(options.camera), false);
-                  M = Array(16).fill(0);
-                  for (var ii=0; ii<4; ++ii) for (var jj=0; jj<4; ++jj) for (var kk=0; kk<4; ++kk) M[ii*4+kk] += M1[ii*4+jj] * M2[jj*4+kk];
-               }
-              if (alpha) { gl.enable(gl.BLEND); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); gl.blendColor(1,1,1,1-alpha); }
-              draw(e.color?programcol:program,gl.TRIANGLES,t,c,[0,0,0],r,undefined,e.va);
-              if (alpha) gl.disable(gl.BLEND);
-              if (e.transform) { M=mtx(options.camera); }
-            }
-            // if we're a number (color), label or the last item, we output the collected items.
-            else if (typeof e=='number' || i==ll-1 || typeof e == 'string') {
-            // render triangles, lines, points.
-              if (alpha) { gl.enable(gl.BLEND); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); gl.blendColor(1,1,1,1-alpha); }
-              if (t.length) { draw(program,gl.TRIANGLES,t,c,[0,0,0],r); t.forEach((x,i)=>{ if (i%9==0) lastpos=[0,0,0]; lastpos[i%3]+=x/3; }); t=[];  }
-              if (l.length) { 
-                var ltest = [], ltest2 = [], ttest = [],  w = (options.lineWidth||1); for (var li=0; li<l.length; li+=6) {
-                  ltest.push(...line_to_tri(l.slice(li,li+6)));
-                  ltest2.push(...line_to_tri2(l.slice(li,li+6)));
-                  ttest.push(w,1-alpha,-w,1-alpha,w,1-alpha,w,1-alpha,-w,1-alpha,-w,1-alpha);
-                }
-                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.BLEND);
-                gl.depthMask(false);
-                draw(programline, gl.TRIANGLES, ltest, [canvas.width/canvas.height,.003,0.0], c, canvas.width/canvas.height, ttest, undefined, ltest2, false);   
-                var l2=l.length-1; lastpos=[(l[l2-2]+l[l2-5])/2,(l[l2-1]+l[l2-4])/2+0.1,(l[l2]+l[l2-3])/2]; l=[]; 
-                gl.depthMask(true);
-                gl.disable(gl.BLEND);
-              }
-              if (p.length) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); draw(programPoint,gl.POINTS,p,[0,0,0],c,r); lastpos = p.slice(-3); lastpos[0]-=0.075; lastpos[1]+=0.075; p=[];gl.disable(gl.BLEND); }
-              if (alpha) gl.disable(gl.BLEND);
-            // setup a new color
-              if (typeof e == "number") { alpha=((e>>>24)&0xff)/255; c[0]=((e>>>16)&0xff)/255; c[1]=((e>>>8)&0xff)/255; c[2]=(e&0xff)/255; }
-            // render a label
-              if (typeof(e)=='string') {
-                if (options.htmlText) { 
-                  if (!canvas['_'+i]) { console.log('creating div'); Object.defineProperty(canvas,'_'+i, {value: document.body.appendChild(document.createElement('div')), enumerable:false }) };
-                  var rc = canvas.getBoundingClientRect(), div = canvas['_'+i];
-                  var pos2 = Element.Mul( [[M[0],M[4],M[8],M[12]],[M[1],M[5],M[9],M[13]],[M[2],M[6],M[10],M[14]],[M[3],M[7],M[11],M[15]]], [...lastpos,1]).map(x=>x.s);
-                  pos2 = Element.Mul( [[5,0,0,0],[0,5*(r||2),0,0],[0,0,1,-1],[0,0,2,0]], pos2).map(x=>x.s).map((x,i,a)=>x/a[3]);
-                  Object.assign(div.style,{position:'fixed',pointerEvents:'none',left:rc.left + (rc.right-rc.left)*(pos2[0]/2+0.5),top: rc.top + (rc.bottom-rc.top)*(-pos2[1]/2+0.5) - 20});
-                  if (div.last != e) { div.innerHTML = e; div.last = e; if (self.renderMathInElement) self.renderMathInElement(div,{output:'html'});  }
-                } else { 
-                  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.DEPTH_TEST);
-                  var fw = 113, mapChar = (x)=>{ var c = x.charCodeAt(0)-33; if (c>=94) c = 94+specialChars.indexOf(x); return c/fw; }
-                  draw(program2,gl.TRIANGLES,
-                       [...Array(e.length*6*3)].map((x,i)=>{ var x=0,z=0.2, o=x+(i/18|0)*1.1; return 0.2*(options.fontSize||1)*2000/canvas.width*[o,-1,z,o+1.2,-1,z,o,1,z,o+1.2,-1,z,o+1.2,1,z,o,1,z][i%18]}),c,lastpos,r,
-                       [...Array(e.length*6*2)].map((x,i)=>{ var o=mapChar(e[i/12|0]); return [o,1,o+1/fw,1,o,0,o+1/fw,1,o+1/fw,0,o,0][i%12]})); gl.disable(gl.BLEND); lastpos[0] += linediff[0];lastpos[1] += linediff[1];lastpos[2] += linediff[2];
-                  if (!options.noZ) gl.enable(gl.DEPTH_TEST);     
-                }
-              }
-            }
-          };
-          // if we're no longer in the page .. stop doing the work.
-          armed++; if (document.body.contains(canvas)) armed=0; if (armed==2) return;
-          canvas.value=x; if (options&&!options.animate) canvas.dispatchEvent(new CustomEvent('input')); canvas.options=options;
-          if (options&&options.animate) { requestAnimationFrame(canvas.update.bind(canvas,f,options)); }
-          if (options&&options.still) { canvas.value=x; canvas.dispatchEvent(new CustomEvent('input')); canvas.im.style.width=canvas.style.width; canvas.im.style.height=canvas.style.height; canvas.im.src = canvas.toDataURL();
-            var p=canvas.parentElement;  if (p) { p.insertBefore(canvas.im,canvas); p.removeChild(canvas); }
-          }
-        }
-        // Basic mouse interactivity. needs more love.
-        var sel=-1; canvas.oncontextmenu = canvas.onmousedown = (e)=>{e.preventDefault(); e.stopPropagation();  if (e.detail===0) return;
-          var rc = canvas.getBoundingClientRect(), mx=(e.x-rc.left)/(rc.right-rc.left)*2-1, my=((e.y-rc.top)/(rc.bottom-rc.top)*4-2)*canvas.height/canvas.width;
-          sel = (e.button==2)?-3:-2; canvas.value.forEach((x,i)=>{
-            if (tot != 5) { if (x[14]) {
-              var pos2 = Element.Mul( [[M[0],M[4],M[8],M[12]],[M[1],M[5],M[9],M[13]],[M[2],M[6],M[10],M[14]],[M[3],M[7],M[11],M[15]]], [-x[13]/x[14],x[12]/x[14],x[11]/x[14],1]).map(x=>x.s);
-              pos2 = Element.Mul( [[5,0,0,0],[0,-5*(2),0,0],[0,0,1,-1],[0,0,2,0]], pos2).map(x=>x.s).map((x,i,a)=>x/a[3]);
-              if ((mx-pos2[0])**2 + ((my)-pos2[1])**2 < 0.001) sel=i;
-            }} else {
-              x = interprete(x); if (x.tp==1) {
-                var pos2 = Element.Mul( [[M[0],M[4],M[8],M[12]],[M[1],M[5],M[9],M[13]],[M[2],M[6],M[10],M[14]],[M[3],M[7],M[11],M[15]]], [...x.pos,1]).map(x=>x.s);
-                pos2 = Element.Mul( [[5,0,0,0],[0,5*(r||2),0,0],[0,0,1,-1],[0,0,2,0]], pos2).map(x=>x.s).map((x,i,a)=>x/a[3]);
-                if ((mx-pos2[0])**2 + ((-my)-pos2[1])**2 < 0.01) sel=i;
-              }
-            }
-          });
-          canvas.onwheel=e=>{e.preventDefault(); e.stopPropagation(); options.z = (options.z||5)+e.deltaY/100; if (!options.animate) requestAnimationFrame(canvas.update.bind(canvas,f,options));}
-          canvas.onmouseup=e=>sel=-1; canvas.onmouseleave=e=>sel=-1;
-          var tx,ty; canvas.ontouchstart = (e)=>{e.preventDefault();  canvas.focus(); var x = e.changedTouches[0].pageX, y = e.changedTouches[0].pageY; tx=x; ty=y; }
-          canvas.ontouchmove = function (e) { e.preventDefault();
-             var x = e.changedTouches[0].pageX, y = e.changedTouches[0].pageY, mx = (x-(tx||x))/1000, my = -(y-(ty||y))/1000; tx=x; ty=y;
-             options.h = (options.h||0)+mx; options.p = Math.max(-Math.PI/2,Math.min(Math.PI/2, (options.p||0)+my)); if (!options.animate) requestAnimationFrame(canvas.update.bind(canvas,f,options)); return;
-          };
-          canvas.onmousemove=(e)=>{
-            var rc = canvas.getBoundingClientRect(),x; if (sel>=0) { if (tot==5) x=interprete(canvas.value[sel]); else { x=canvas.value[sel]; x={pos:[-x[13]/x[14],-x[12]/x[14],x[11]/x[14]]};  }}
-            var mx =(e.movementX)/(rc.right-rc.left)*2, my=((e.movementY)/(rc.bottom-rc.top)*2)*canvas.height/canvas.width;
-            if (sel==-2) { options.h = (options.h||0)+(options.conformal?-1:1)*mx/2; options.p = Math.max(-Math.PI/2,Math.min(Math.PI/2, (options.p||0)-my/2)); if (options.camera) options.camera.set( ( Element.Bivector(0,0,0,0,0,options.p).Exp() ).Mul( Element.Bivector(0,0,0,0,options.h,0).Exp() )); if (!options.animate) requestAnimationFrame(canvas.update.bind(canvas,f,options)); return; };
-            if (sel==-3) { var ct = Math.cos(options.h||0), st= Math.sin(options.h||0), ct2 = Math.cos(options.p||0), st2 = Math.sin(options.p||0);
-              if (e.shiftKey) { options.posy = (options.posy||0)+my; } else { options.posx = (options.posx||0)+mx*ct+my*st; options.posz = (options.posz||0)+mx*-st+my*ct*ct2; } if (!options.animate) requestAnimationFrame(canvas.update.bind(canvas,f,options));return; }; if (sel < 0) return;
-            if (tot==5) { 
-               x.pos[0] += (e.buttons!=2)?Math.cos((options.h||0))*mx:Math.sin(-(options.h||0))*-my; x.pos[1]+=(e.buttons!=2)?-my:0; x.pos[2]+=(e.buttons!=2)?Math.sin((options.h||0))*mx:Math.cos(-(options.h||0))*-my;
-               canvas.value[sel].set(Element.Mul(ni,(x.pos[0]**2+x.pos[1]**2+x.pos[2]**2)*0.5).Sub(no)); canvas.value[sel].set(x.pos,1); }
-            else if (x) { 
-               var [cw,ch] = [rc.width, rc.height];
-               var ox = (1/(options.scale || 1)) * ((e.offsetX / cw) - 0.5);
-               var oy = (1/(options.scale || 1)) * ((e.offsetY / ch) - 0.5) * (ch/cw);
-               var tb  = Element.sw(options.camera,canvas.value[sel]);
-               var z = -(tb.e012/tb.e123+5)/5*4; tb.e023 = ox*z*tb.e123; tb.e013 = oy*z*tb.e123;
-               canvas.value[sel].set(Element.sw(options.camera.Reverse, tb));
-            }
-            if (!options.animate) requestAnimationFrame(canvas.update.bind(canvas,f,options));
-          }
-        }
-        canvas.value = f.call?f():f; canvas.options=options;
-        if (options&&options.still) {
-          var i=new Image(); canvas.im = i; return requestAnimationFrame(canvas.update.bind(canvas,f,options)),canvas;
-        } else return requestAnimationFrame(canvas.update.bind(canvas,f,options)),canvas;
       }
 
     // The inline function is a js to js translator that adds operator overloading and algebraic literals.
@@ -1781,7 +648,7 @@
       // Translate algebraic literals. (scientific e-notation to "this.Coeff"
         tok=tok.map(t=>(t[0]==2)?[2,'Element.Coeff('+basis.indexOf((!options.Cayley?simplify:(x)=>x)('e'+t[1].split(/e_|e|i/)[1]||1).replace('-',''))+','+(simplify(t[1].split(/e_|e|i/)[1]||1).match('-')?"-1*":"")+parseFloat(t[1][0]=='e'?1:t[1].split(/e_|e|i/)[0])+')']:t);
       // String templates (limited support - needs fundamental changes.).
-        tok=tok.map(t=>(t[0]==1 && t[1][0]=='`')?[1,t[1].replace(/\$\{(.*?)\}/g,a=>"${"+Element.inline(a.slice(2,-1)).toString().match(/return \((.*)\)/)[1]+"}")]:t);  
+        tok=tok.map(t=>(t[0]==1 && t[1][0]=='`')?[1,t[1].replace(/\$\{(.*?)\}/g,a=>"${"+Element.inline(a.slice(2,-1)).toString().match(/return \((.*)\)/)[1]+"}")]:t);
       // We support two syntaxes, standard js or if you pass in a text, asciimath.
         var syntax = (intxt instanceof Function)?[[['.Normalized','Normalize',2],['.Length','Length',2]],[['~','Conjugate',1],['!','Dual',1]],[['**','Pow',0,1]],[['^','Wedge'],['&','Vee'],['<<','LDot']],[['*','Mul'],['/','Div']],[['|','Dot']],[['>>>','sw',0,1]],[['-','Sub'],['+','Add']],[['%','%']],[['==','eq'],['!=','neq'],['<','lt'],['>','gt'],['<=','lte'],['>=','gte']]]
                                                 :[[['pi','Math.PI'],['sin','Math.sin']],[['ddot','this.Reverse'],['tilde','this.Involute'],['hat','this.Conjugate'],['bar','this.Dual']],[['^','Pow',0,1]],[['^^','Wedge'],['*','LDot']],[['**','Mul'],['/','Div']],[['-','Sub'],['+','Add']],[['<','lt'],['>','gt'],['<=','lte'],['>=','gte']]];
@@ -1828,86 +695,22 @@
       }
     }
 
-    if ((p==2 || p==3) && (r==1)) {
-      res.arrow = res.inline(( from_point, to_point, w=0.03, aspect=0.8, camera=1 )=>{
-         from_point = from_point/(-from_point|!1e0); to_point = to_point/(-to_point|!1e0);
-         var line = ( from_point & to_point ), l = line.Length;
-         var shape = [[0,w],[l-5*w,w],[l-5*w,aspect*5*w],[l,0],[l-5*w,-aspect*5*w],[l-5*w,-w],[0,-w]].map(([x,y])=>!(1e0+x*1e1+y*1e2));
-         var sqrt = R => R==-1?1e12:(1+R).Normalized;
-         var R = ((to_point - from_point).UnDual).Normalized * 1e1;
-         var R2 = sqrt(from_point/!1e0) * sqrt(R);
-         var p2 = R2 >>> 1e3;
-         if (p2 != 0) { var p1 = (((~(camera+0e1) >>> 1e3)|line)/line).Normalized; return sqrt(p1/p2) * R2 >>> shape; }
-         return  R2  >>> shape;
-      })
-    }
+    res.arrow = res.inline(( from_point, to_point, w=0.03, aspect=0.8, camera=1 )=>{
+        from_point = from_point/(-from_point|!1e0); to_point = to_point/(-to_point|!1e0);
+        var line = ( from_point & to_point ), l = line.Length;
+        var shape = [[0,w],[l-5*w,w],[l-5*w,aspect*5*w],[l,0],[l-5*w,-aspect*5*w],[l-5*w,-w],[0,-w]].map(([x,y])=>!(1e0+x*1e1+y*1e2));
+        var sqrt = R => R==-1?1e12:(1+R).Normalized;
+        var R = ((to_point - from_point).UnDual).Normalized * 1e1;
+        var R2 = sqrt(from_point/!1e0) * sqrt(R);
+        var p2 = R2 >>> 1e3;
+        if (p2 != 0) { var p1 = (((~(camera+0e1) >>> 1e3)|line)/line).Normalized; return sqrt(p1/p2) * R2 >>> shape; }
+        return  R2  >>> shape;
+    })
 
-    if (options.dual) {
-      Object.defineProperty(res.prototype, 'Inverse', {configurable:true, get(){ var s = 1/this.s**2; return this.map((x,i)=>i?-x*s:1/x ); }});
-    } else {
-    // Matrix-free inverses up to 5D. Should translate this to an inline call for readability.
-    // http://repository.essex.ac.uk/17282/1/TechReport_CES-534.pdf
-      Object.defineProperty(res.prototype, 'Inverse', {configurable: true, get(){
-        // Shirokov inverse ..
-        if (tot > 5) {
-          for (var N=2**(((tot+1)/2)|0), Uk=this.Scale(1), k=1; k<N; ++k) {
-            var adjU = Uk.Sub(this.constructor.Scalar((N/k) * Uk.s));
-            Uk = this.Mul(adjU);
-          }
-          return Uk.s == 0 ? 0:adjU.Scale( 1/Uk.s );
-        }
-        return (tot==0)?new this.constructor.Scalar([1/this[0]]):
-               (tot==1)?this.Involute.Mul(this.constructor.Scalar(1/this.Mul(this.Involute)[0])):
-               (tot==2)?this.Conjugate.Mul(this.constructor.Scalar(1/this.Mul(this.Conjugate)[0])):
-               (tot==3)?this.Reverse.Mul(this.Involute).Mul(this.Conjugate).Mul( this.constructor.Scalar(1/this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse)[0])):
-               (tot==4)?this.Conjugate.Mul(this.Mul(this.Conjugate).Map(3,4)).Mul( this.constructor.Scalar(1/this.Mul(this.Conjugate).Mul(this.Mul(this.Conjugate).Map(3,4))[0])):
-                        this.Conjugate.Mul(this.Involute).Mul(this.Reverse).Mul(this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse).Map(1,4)).Mul(this.constructor.Scalar(1/this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse).Mul(this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse).Map(1,4))[0]));
-      }});
-    }
+    Object.defineProperty(res.prototype, 'Inverse', {configurable: true, get(){
+      return this.Conjugate.Mul(this.Mul(this.Conjugate).Map(3,4)).Mul( this.constructor.Scalar(1/this.Mul(this.Conjugate).Mul(this.Mul(this.Conjugate).Map(3,4))[0]));
+    }});
 
-    if (options.over) {
-     // experimental. do not use.
-      res.over = options.over;
-      ["Mul","Add","Sub","Scale","Dot","Wedge","LDot","Vee"].forEach(x=>res.prototype[x] = options.over.inline(res.prototype[x]));
-      res.prototype.Coeff   = function() { for (var i=0,l=arguments.length; i<l; i+=2) this[arguments[i]]=(arguments[i+1] instanceof options.over)?arguments[i+1]:options.over.Scalar(arguments[i+1]); return this; }
-      res.prototype.upgrade = function () { for (var i=0; i<this.length; i++) this[i] = options.over.Scalar(0); }
-      Object.defineProperty(res.prototype, 'Conjugate', {configurable:true,get(){var res = new this.constructor(); for (var i=0; i<this.length; i++) res[i]= this[i].slice().Scale([1,-1,-1,1][grades[i]%4]); return res; }});
-      Object.defineProperty(res.prototype, 'Reverse',   {configurable:true,get(){var res = new this.constructor(); for (var i=0; i<this.length; i++) res[i]= this[i].slice().Scale([1,1,-1,-1][grades[i]%4]); return res; }});
-      Object.defineProperty(res.prototype, 'Involute',  {configurable:true,get(){var res = new this.constructor(); for (var i=0; i<this.length; i++) res[i]= this[i].slice().Scale([1,-1,1,-1][grades[i]%4]); return res; }});
-      Object.defineProperty(res.prototype, 'Inverse', {configurable: true, get(){
-        return (tot==0)?new this.constructor.Scalar([this[0].Inverse]):
-               (tot==1)?this.Involute.Mul(this.constructor.Scalar(this.Mul(this.Involute)[0].Inverse)):
-               (tot==2)?this.Conjugate.Mul(this.constructor.Scalar(this.Mul(this.Conjugate)[0].Inverse)):
-               (tot==3)?this.Reverse.Mul(this.Involute).Mul(this.Conjugate).Mul( this.constructor.Scalar(this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse)[0].Inverse)):
-               (tot==4)?this.Conjugate.Mul(this.Mul(this.Conjugate).Map(3,4)).Mul( this.constructor.Scalar(this.Mul(this.Conjugate).Mul(this.Mul(this.Conjugate).Map(3,4))[0].Inverse)):
-                        this.Conjugate.Mul(this.Involute).Mul(this.Reverse).Mul(this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse).Map(1,4)).Mul(this.constructor.Scalar(this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse).Mul(this.Mul(this.Conjugate).Mul(this.Involute).Mul(this.Reverse).Map(1,4))[0].Inverse));
-      }});
-      res.prototype.toString = function() { return [...this].map((x,i)=>x==0?undefined:(i?'('+x+')'+basis[i]:x.toString())).filter(x=>x).join(' + '); }
-    }
-
-  // Experimental differential operator.
-    var _D, _DT, _DA, totd = basis.length;
-    function makeD(transpose=false){
-      _DA = _DA || Algebra({ p:p,q:q,r:r,basis:options.basis,even:options.even,over:Algebra({dual:totd})}); // same algebra, but over dual numbers.
-      return (func)=>{
-        var dfunc = _DA.inline(func);                                                                       // convert input function to dual algebra
-        return (val,...args)=>{                                                                             // return a new function (the derivative w.r.t 1st param)
-          if (!(val instanceof res)) val = res.Scalar(val);                                                 // allow to be called with scalars.
-          args = args.map(x=>{ var r = _DA.Scalar(0); for (var i=0; i<totd; i++) r[i][0]=x[i]; return r;}); // upcast args.
-          for (var dval=_DA.Scalar(0),i=0; i<totd; i++) { dval[i][0] = val[i]; dval[i][1+i] = 1; };         // fill in coefficients and dual components
-          var rval = dfunc(dval,...args); var r = [...Array(totd)].map(x=>val.slice());                     // call the function in the dual algebra.
-          if (transpose) for (var i=0; i<totd; i++) for (var j=0; j<totd; j++) { r[i][j] = rval[i][j+1]; }  // downcast transpose from dual algebra to Jacobian vector.
-          else for (var i=0; i<totd; i++) for (var j=0; j<totd; j++) { r[j][i] = rval[i][j+1]; }            // downcast from dual algebra to Jacobian vector.
-          return r.length<=2?r[0]:r;                                                                        // return derivative or jacobian.
-        }
-      }
-    }
-    Object.defineProperty(res, 'D',  {configurable:true,get(){ if (_D) return _D; _D = makeD(false); return _D }});
-    Object.defineProperty(res, 'Dt', {configurable:true,get(){ if (_DT) return _DT; _DT = makeD(true); return _DT }});
-    
-    res.QR = QR;
-
-  // If a function was passed in, translate, call and return its result. Else just return the Algebra.
-    if (fu instanceof Function) return res.inline(fu)(); else return res;
+    res.inline(fu)();
   }
 }));
